@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
-cd /home/raizi/yue2
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "${SCRIPT_DIR}/../generate.py" ]; then
+  cd "${SCRIPT_DIR}/.."
+elif [ -d "${HOME}/yue2" ]; then
+  cd "${HOME}/yue2"
+fi
 
 echo "=== Verifying Imports ==="
 python3 -c "import torch; from transformers import PreTrainedModel; from yue2 import YuE2Pipeline; print('All core modules imported successfully! PyTorch:', torch.__version__, 'CUDA:', torch.cuda.is_available())"

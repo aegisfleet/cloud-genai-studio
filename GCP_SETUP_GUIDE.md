@@ -12,7 +12,7 @@
 * **マシンタイプ**: `g2-standard-8` (8 vCPU, 32GB RAM, 1x NVIDIA L4 24GB VRAM)
 * **プロビジョニング**: `SPOT` (大幅に安価なプリエンプティブル料金体系)
 * **OSイメージ**: Deep Learning VM (`deeplearning-platform-release` / `pytorch-2-9-cu129-ubuntu-2204-nvidia-580`)
-* **成果物出力先**: ローカルの `d:\Work\YuE2\outputs\`
+* **成果物出力先**: ローカルの `outputs/`
 
 ---
 
@@ -73,12 +73,12 @@ gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="mkdir -p ~/y
 ```
 
 ### 4.2 ローカルファイルの転送 (SCP)
-ローカルのリポジトリルート (`d:\Work\YuE2`) から必要なファイルを転送する。
+ローカルのリポジトリルートから必要なファイルを転送する。
 ```powershell
 # 依存定義、生成コード、Wheelパッケージ、シェルスクリプト、サンプルの転送
-gcloud compute scp requirements.txt generate.py packages/yue2_infer-0.1.5-py3-none-any.whl gcp/run_remote.sh gcp/run_10deg.sh gcp/run_nier.sh examples/lyrics/lyrics_10deg.txt examples/scores/10deg.abc yue2-l4-spot:/home/raizi/yue2/ --zone=asia-northeast1-b
+gcloud compute scp requirements.txt generate.py packages/yue2_infer-0.1.5-py3-none-any.whl gcp/run_remote.sh gcp/run_10deg.sh gcp/run_nier.sh examples/lyrics/lyrics_10deg.txt examples/scores/10deg.abc yue2-l4-spot:~/yue2/ --zone=asia-northeast1-b
 ```
-*(※ ユーザー名 `raizi` は実行環境のユーザー名に応じて適宜変更される)*
+*(※ `~/yue2/` を指定することで、ログインユーザーのホームディレクトリ配下に自動配置される)*
 
 ### 4.3 依存ライブラリのインストールと競合回避
 > [!IMPORTANT]
@@ -127,12 +127,12 @@ gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="cd ~/yue2 &&
 
 ```powershell
 # ローカル outputs フォルダへダウンロード
-gcloud compute scp --recurse yue2-l4-spot:/home/raizi/yue2/outputs/* d:\Work\YuE2\outputs\ --zone=asia-northeast1-b
+gcloud compute scp --recurse yue2-l4-spot:~/yue2/outputs/* outputs/ --zone=asia-northeast1-b
 ```
 
 ダウンロード後の確認:
 ```powershell
-Get-ChildItem d:\Work\YuE2\outputs
+Get-ChildItem outputs
 ```
 
 ---

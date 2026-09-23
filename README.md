@@ -103,7 +103,7 @@ python generate.py \
 .\gcp\run_cloud_generation.ps1 -Style "cyberpunk synthwave, aggressive bass, 130 bpm"
 ```
 
-詳細な手動構築コマンドやクォータ確認方法については、[GCP_SETUP_GUIDE.md](file:///d:/Work/YuE2/GCP_SETUP_GUIDE.md) を参照してください。
+詳細な手動構築コマンドやクォータ確認方法については、[GCP_SETUP_GUIDE.md](GCP_SETUP_GUIDE.md) を参照してください。
 
 ---
 
