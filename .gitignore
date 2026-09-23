@@ -26,3 +26,6 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
+
+# Third-party tools
+tools/jizura/

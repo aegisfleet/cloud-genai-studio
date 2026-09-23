@@ -12,7 +12,11 @@ def parse_args():
     parser.add_argument("--lyrics-file", type=str, default=None, help="Path to text file containing lyrics")
     parser.add_argument("--cot", type=str, choices=["full", "melody", "off"], default="full", help="CoT mode")
     parser.add_argument("--abc-file", type=str, default=None, help="Path to reference ABC notation file (.abc)")
+    parser.add_argument("--vae", type=str, default="m-a-p/YuE2-Vae", help="Hugging Face repo or local path for VAE model")
     parser.add_argument("--ode-steps", type=int, default=32, help="ODE steps for audio synthesis (default: 32)")
+    parser.add_argument("--temperature", type=float, default=1.0, help="Sampling temperature for audio semantic tokens (default: 1.0)")
+    parser.add_argument("--top-p", type=float, default=0.95, help="Sampling top-p for audio semantic tokens (default: 0.95)")
+    parser.add_argument("--cfg-scale", type=float, default=None, help="Classifier-Free Guidance scale (default: None / 1.0)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed")
     parser.add_argument("--output", type=str, default="outputs/song.flac", help="Output audio file path (.flac or .wav)")
     return parser.parse_args()
@@ -66,7 +70,7 @@ def main():
     print("\nLoading YuE2 Pipeline (NVIDIA L4 24GB Optimized)...")
     pipe = YuE2Pipeline.from_pretrained(
         "m-a-p/YuE2-3B",
-        vae="m-a-p/YuE2-Vae",
+        vae=args.vae,
         device="cuda" if torch.cuda.is_available() else "cpu",
         backend="torch",
         offload_ar=False,
@@ -75,14 +79,30 @@ def main():
         progress=True
     )
 
+    sampling_overrides = {}
+    if args.temperature is not None:
+        sampling_overrides["temperature"] = args.temperature
+    if args.top_p is not None:
+        sampling_overrides["top_p"] = args.top_p
+
+    pipe_kwargs = {
+        "style": args.style,
+        "lyrics": lyrics,
+        "cot": args.cot,
+        "abc": ref_abc,
+        "seed": args.seed,
+    }
+    if sampling_overrides:
+        pipe_kwargs["semantic_sampling"] = sampling_overrides
+    if args.cfg_scale is not None:
+        pipe_kwargs["cfg_scale"] = args.cfg_scale
+
+    print(f"Sampling: temp={args.temperature}, top_p={args.top_p}")
+    if args.cfg_scale is not None:
+        print(f"CFG Guidance Scale: {args.cfg_scale}")
+
     print("\nGenerating song...")
-    song = pipe(
-        style=args.style,
-        lyrics=lyrics,
-        cot=args.cot,
-        abc=ref_abc,
-        seed=args.seed
-    )
+    song = pipe(**pipe_kwargs)
 
     out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)

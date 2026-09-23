@@ -70,25 +70,24 @@ PowerShell を開き、ワンコマンドで生成を実行します。
 
 ---
 
-## 🎬 Twitter / SNS 投稿向けツールの使い方
+## 🎬 リリックモーション（文字PV）動画の作成 (JIZURA 連携)
 
-### 1. 音声の 2分カット & フェードアウト (5MB以下 MP3化)
-```bash
-python tools/edit_for_twitter.py --input "outputs/10deg_song.flac" --output "outputs/10deg_song_twitter.mp3"
-```
-* きっかり 2分00秒（120秒）にトリミングし、末尾5秒間に自然なコサインカーブフェードアウトを適用します。
-* Twitter の共有制限（5MB以下）を満たす高品質 MP3 を出力します。
+歌詞のモーショングラフィックス動画（文字PV）を作成するための専用環境 [JIZURA](https://github.com/852wa/JIZURA/) を本リポジトリ内に統合しています。
 
-### 2. リアルタイム波形アニメーション付き MP4 動画の生成
-```bash
-python tools/create_waveform_video.py \
-  --audio "outputs/10deg_song_twitter.mp3" \
-  --output "outputs/10deg_song_twitter.mp4" \
-  --title "10 ℃" \
-  --subtitle "しゃろう「10℃」- J-Rock Arrangement -" \
-  --credits "Original: しゃろう (Sharou) | Arrangement & AI Vocal: YuE2"
-```
-* 音声波形（`showwaves`）を合成し、Twitter/X 推奨仕様（720p HD, H.264, AAC）で 5MB 以下の MP4 動画を生成します。
+### 1. JIZURA スタジオの起動
+Windows では `start_jizura.bat` をダブルクリック（またはブラウザで `tools/jizura/index.html` を開く）。
+サーバー通信不要の完全ローカル環境で起動します。
+
+### 2. 素材の読み込み
+* **楽曲ファイル**: [outputs/10deg_take3_expressive.wav](outputs/10deg_take3_expressive.wav) を画面の「曲」にドラッグ＆ドロップ。
+* **歌詞ファイル**: [outputs/10deg_jizura_lyrics.lrc](outputs/10deg_jizura_lyrics.lrc) の内容をコピーし、画面の「歌詞」欄に貼り付け。
+  * ※ LRC形式のタイムスタンプにより、歌い出しとカットの切り替えがミリ秒単位で完全自動同期されます。
+  * ※ 演出タグ（`*強調*`, `!`, `/`）により、サビのキメやフラッシュ・揺れが自動演出されます。
+
+### 3. スタイル選択と MP4 書き出し
+* キーボードの `R` キー（または「おまかせで作る」）を押すたびに、スタイル・演出・配色・構成がまるごと再抽選されます。
+  * J-Rock におすすめのスタイル：`シンセ80s`, `アシッド`, `グラフィック`, `墨と朱` など。
+* 気に入った構成が決まったら、「MP4 を書き出す」を押すと動画が出力されます。
 
 ---
 
