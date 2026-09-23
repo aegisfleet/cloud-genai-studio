@@ -1,0 +1,28 @@
+# Python virtual environment and cache
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Audio / Video Outputs (prevent pushing large files)
+outputs/*
+!outputs/.gitkeep
+*.flac
+*.wav
+*.mp3
+*.mp4
+*.ogg
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# Cloud SDK & IDE
+.idea/
+.vscode/
+*.swp
