@@ -6,9 +6,10 @@
 
 ## 🌟 主な特徴
 
-1. **デュアル実行環境**:
-   * **ローカル (RTX 3060 12GB)**: メモリバジェット・VAEタイル最適化により 12GB VRAM で安定動作。Gradio Web UI 完備。
-   * **クラウド (Google Cloud L4 Spot)**: 24GB VRAM のモダン GPU を安価な Spot インスタンスで自動プロビジョニング。1曲約2分〜3分で高速生成。
+1. **Google Cloud (NVIDIA L4 Spot) 最適化**:
+   * **高速生成**: CUDA Graph (`backend="torch"`)、CPUオフロード廃止 (`offload_ar=False`)、VAEタイル拡大 (`vae_core_frames=1024`) により、3分の楽曲を約2分〜3分で高速生成。
+   * **超低コスト & 最小メモリ構成**: `g2-standard-4` (4 vCPU, 16GB RAM + 8GB Swap, 1x L4 24GB VRAM) の Spot インスタンスを採用。1曲あたりのクラウド費用は約数円。
+   * **完全自動化ワンコマンド**: PowerShell スクリプト 1本で「インスタンス作成/起動 -> 環境構築 -> 楽曲生成 -> ローカル outputs/ へ回収 -> インスタンス自動停止」まで完全自動完結。
 2. **ABC 楽譜プロンプト対応**:
    * SheetSage2 などで採譜したメロディやコード進行の ABC 楽譜ファイル（`.abc`）を直接読み込み、既存楽曲のアレンジや耳コピ音源を生成可能。
 3. **Twitter / SNS 投稿用ポストプロダクションツール**:
@@ -24,10 +25,8 @@ YuE2/
 ├── README.md                     # 本ドキュメント
 ├── GCP_SETUP_GUIDE.md            # Google Cloud (L4 Spot) 完全再現手順書
 ├── requirements.txt              # 必要依存パッケージ
-├── start_webui.bat               # Windows向け WebUI ワンクリック起動
 │
-├── generate.py                   # CLI 楽曲生成スクリプト (ABC対応, UTF-8対応)
-├── webui.py                      # Gradio Web UI アプリケーション
+├── generate.py                   # L4最適化 CLI 楽曲生成スクリプト (CUDA Graph / ABC対応)
 │
 ├── tools/                        # SNS投稿向けポストプロダクションツール
 │   ├── edit_for_twitter.py       # 2分フェードアウト・5MB以下MP3変換ツール
@@ -55,51 +54,15 @@ YuE2/
 
 ---
 
-## 🚀 クイックスタート (ローカル環境)
+## 🚀 クラウド自動生成の実行手順
 
-### 1. 環境構築
-Python 3.10+ 環境で仮想環境を作成し、依存関係をインストールします。
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-pip install packages/yue2_infer-0.1.5-py3-none-any.whl
-```
-
-### 2. Web UI の起動
-Windows では `start_webui.bat` をダブルクリック、または以下を実行します。
-```bash
-python webui.py
-```
-ブラウザで `http://127.0.0.1:7860` を開きます。
-
-### 3. コマンドラインからの生成 (CLI)
-```bash
-# 基本的な生成
-python generate.py \
-  --style "J-Pop, emotional female vocal, dynamic piano, upbeat anime opening" \
-  --output "outputs/my_song.flac"
-
-# 歌詞ファイルと ABC 楽譜を指定した生成
-python generate.py \
-  --style "energetic modern J-Rock, powerful passionate female vocal, 160 bpm" \
-  --lyrics-file "examples/lyrics/lyrics_10deg.txt" \
-  --abc-file "examples/scores/10deg.abc" \
-  --output "outputs/10deg_song.flac"
-```
-
----
-
-## ☁️ Google Cloud (NVIDIA L4 Spot) での高速生成
-
-東京リージョン (`asia-northeast1-b`) の Spot インスタンスを活用し、高速かつ低コストで生成できます。
+PowerShell を開き、ワンコマンドで生成を実行します。
 
 ```powershell
-# 自動化スクリプトの実行 (起動 -> 生成 -> outputs/ へダウンロード -> 自動停止)
+# 基本実行 (自動起動 -> 生成 -> outputs/ へダウンロード -> 自動停止)
 .\gcp\run_cloud_generation.ps1
 
-# スタイルを指定して実行
+# 任意のスタイルタグを指定して実行
 .\gcp\run_cloud_generation.ps1 -Style "cyberpunk synthwave, aggressive bass, 130 bpm"
 ```
 

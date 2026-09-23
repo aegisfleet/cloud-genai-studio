@@ -6,11 +6,17 @@ $ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
 param (
     [string]$InstanceName = "yue2-l4-spot",
     [string]$Zone = "asia-northeast1-b",
-    [string]$MachineType = "g2-standard-8",
+    [string]$MachineType = "g2-standard-4",
     [string]$BootDiskSize = "100GB",
     [string]$ImageFamily = "pytorch-2-9-cu129-ubuntu-2204-nvidia-580",
     [string]$ImageProject = "deeplearning-platform-release",
-    [string]$Style = "J-Pop, emotional female vocal, dynamic piano, upbeat anime opening",
+    [string]$Style = "energetic modern J-Rock, powerful passionate female vocal, roaring overdrive electric guitar riffs, expressive guitar solo, punchy driving drums, dynamic slap bass, emotional rich strings and bright piano, explosive anime rock style, rich layered arrangement, full band production, exciting climax, 160 bpm",
+    [string]$LyricsFile = "$ProjectRoot\examples\lyrics\lyrics_10deg.txt",
+    [string]$AbcFile = "$ProjectRoot\examples\scores\10deg.abc",
+    [string]$Cot = "full",
+    [int]$OdeSteps = 32,
+    [int]$Seed = 100,
+    [string]$OutputFilename = "10deg_song.flac",
     [string]$OutputDir = "$ProjectRoot\outputs",
     [switch]$KeepRunning
 )
@@ -19,7 +25,7 @@ Write-Host "=== 1. Checking / Creating Spot Instance ($InstanceName) ===" -Foreg
 $existing = gcloud compute instances list --filter="name=$InstanceName AND zone:$Zone" --format="value(status)" 2>$null
 
 if (-not $existing) {
-    Write-Host "Creating new Spot instance: $InstanceName in $Zone with $MachineType..." -ForegroundColor Yellow
+    Write-Host "Creating new Spot instance: $InstanceName in $Zone with $MachineType (16GB RAM, L4 GPU)..." -ForegroundColor Yellow
     gcloud compute instances create $InstanceName `
         --zone=$Zone `
         --machine-type=$MachineType `
@@ -60,29 +66,59 @@ if (-not $ready) {
     exit 1
 }
 
-# Get remote user name
+# Remote user name & directory
 $remoteUser = (gcloud compute ssh $InstanceName --zone=$Zone --command="whoami").Trim()
 $remoteHome = "/home/$remoteUser/yue2"
 
-Write-Host "`n=== 3. Uploading Code, Shell Script, and Wheel to Instance ($remoteHome) ===" -ForegroundColor Cyan
-gcloud compute ssh $InstanceName --zone=$Zone --command="mkdir -p $remoteHome/outputs"
+Write-Host "`n=== 3. Uploading Code and Assets to Instance ($remoteHome) ===" -ForegroundColor Cyan
+gcloud compute ssh $InstanceName --zone=$Zone --command="mkdir -p $remoteHome/outputs $remoteHome/examples/lyrics $remoteHome/examples/scores $remoteHome/gcp"
 
-# Convert line endings of shell scripts to LF before uploading
-$shPath = "$PSScriptRoot\run_remote.sh"
-if (Test-Path $shPath) {
-    $shContent = (Get-Content $shPath -Raw) -replace "`r`n", "`n"
-    [System.IO.File]::WriteAllText($shPath, $shContent, [System.Text.UTF8Encoding]::new($false))
+# Normalize line endings of shell scripts
+Get-ChildItem -Path "$PSScriptRoot\*.sh" | ForEach-Object {
+    $content = (Get-Content $_.FullName -Raw) -replace "`r`n", "`n"
+    [System.IO.File]::WriteAllText($_.FullName, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
 $wheelPath = "$ProjectRoot\packages\yue2_infer-0.1.5-py3-none-any.whl"
 $reqPath = "$ProjectRoot\requirements.txt"
 $genPath = "$ProjectRoot\generate.py"
 
-gcloud compute scp $reqPath $genPath $wheelPath $shPath "${InstanceName}:${remoteHome}/" --zone=$Zone
+gcloud compute scp $reqPath $genPath $wheelPath "${InstanceName}:${remoteHome}/" --zone=$Zone
+gcloud compute scp --recurse "$PSScriptRoot\*.sh" "${InstanceName}:${remoteHome}/gcp/" --zone=$Zone
+gcloud compute scp --recurse "$ProjectRoot\examples\*" "${InstanceName}:${remoteHome}/examples/" --zone=$Zone
 
-Write-Host "`n=== 4. Setting Up Dependencies and Generating Music on L4 GPU ===" -ForegroundColor Cyan
-# Ensure torchvision conflict is resolved, then run script
-gcloud compute ssh $InstanceName --zone=$Zone --command="sudo pip3 uninstall -y torchvision 2>/dev/null; pip3 uninstall -y torchvision 2>/dev/null; cd $remoteHome && pip3 install -q yue2_infer-0.1.5-py3-none-any.whl && pip3 install -q -r requirements.txt && bash run_remote.sh"
+Write-Host "`n=== 4. Setting Up Swap, Dependencies, and Running Generation ===" -ForegroundColor Cyan
+# 1. Setup 8GB Swap if not exists
+# 2. Uninstall torchvision to fix ABI conflict
+# 3. Install packages
+# 4. Run generate.py with L4 optimizations
+$setupAndRunCmd = @"
+if [ ! -f /swapfile ]; then
+    echo 'Creating 8GB Swapfile...'
+    sudo fallocate -l 8G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192
+    sudo chmod 600 /swapfile
+    sudo mkswap /swapfile
+    sudo swapon /swapfile
+fi
+sudo pip3 uninstall -y torchvision 2>/dev/null || true
+pip3 uninstall -y torchvision 2>/dev/null || true
+
+cd $remoteHome
+pip3 install -q yue2_infer-0.1.5-py3-none-any.whl
+pip3 install -q -r requirements.txt
+
+echo 'Starting L4 optimized generation...'
+python3 generate.py \
+  --style "$Style" \
+  --lyrics-file "$remoteHome/examples/lyrics/lyrics_10deg.txt" \
+  --abc-file "$remoteHome/examples/scores/10deg.abc" \
+  --cot "$Cot" \
+  --ode-steps $OdeSteps \
+  --seed $Seed \
+  --output "$remoteHome/outputs/$OutputFilename"
+"@
+
+gcloud compute ssh $InstanceName --zone=$Zone --command="$setupAndRunCmd"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Music generation failed."

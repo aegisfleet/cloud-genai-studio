@@ -9,7 +9,7 @@
 * **クラウドプロバイダ**: Google Cloud Platform (GCP)
 * **リージョン / ゾーン**: 東京 (`asia-northeast1-b`)
 * **インスタンス名**: `yue2-l4-spot`
-* **マシンタイプ**: `g2-standard-8` (8 vCPU, 32GB RAM, 1x NVIDIA L4 24GB VRAM)
+* **マシンタイプ**: `g2-standard-4` (4 vCPU, 16GB RAM, 1x NVIDIA L4 24GB VRAM)
 * **プロビジョニング**: `SPOT` (大幅に安価なプリエンプティブル料金体系)
 * **OSイメージ**: Deep Learning VM (`deeplearning-platform-release` / `pytorch-2-9-cu129-ubuntu-2204-nvidia-580`)
 * **成果物出力先**: ローカルの `outputs/`
@@ -46,7 +46,7 @@ gcloud compute regions describe asia-northeast1 --format="yaml(quotas)" | Select
 ```powershell
 gcloud compute instances create yue2-l4-spot `
     --zone=asia-northeast1-b `
-    --machine-type=g2-standard-8 `
+    --machine-type=g2-standard-4 `
     --provisioning-model=SPOT `
     --instance-termination-action=STOP `
     --image-family=pytorch-2-9-cu129-ubuntu-2204-nvidia-580 `
@@ -67,16 +67,24 @@ gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="nvidia-smi"
 
 ## 4. 環境構築とファイル転送
 
-### 4.1 リモート側の作業ディレクトリ作成
+### 4.1 仮想メモリ（Swap 8GB）の設定
+16GB RAM 環境での突発的メモリスパイク（OOM）を確実に防止するため、8GB の Swap 領域を有効化する。
 ```powershell
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="mkdir -p ~/yue2/outputs"
+gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="sudo fallocate -l 8G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192; sudo chmod 600 /swapfile; sudo mkswap /swapfile; sudo swapon /swapfile; free -h"
 ```
 
-### 4.2 ローカルファイルの転送 (SCP)
+### 4.2 リモート側の作業ディレクトリ作成
+```powershell
+gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="mkdir -p ~/yue2/outputs ~/yue2/examples/lyrics ~/yue2/examples/scores ~/yue2/gcp"
+```
+
+### 4.3 ローカルファイルの転送 (SCP)
 ローカルのリポジトリルートから必要なファイルを転送する。
 ```powershell
 # 依存定義、生成コード、Wheelパッケージ、シェルスクリプト、サンプルの転送
-gcloud compute scp requirements.txt generate.py packages/yue2_infer-0.1.5-py3-none-any.whl gcp/run_remote.sh gcp/run_10deg.sh gcp/run_nier.sh examples/lyrics/lyrics_10deg.txt examples/scores/10deg.abc yue2-l4-spot:~/yue2/ --zone=asia-northeast1-b
+gcloud compute scp requirements.txt generate.py packages/yue2_infer-0.1.5-py3-none-any.whl yue2-l4-spot:~/yue2/ --zone=asia-northeast1-b
+gcloud compute scp --recurse gcp/*.sh yue2-l4-spot:~/yue2/gcp/ --zone=asia-northeast1-b
+gcloud compute scp --recurse examples/* yue2-l4-spot:~/yue2/examples/ --zone=asia-northeast1-b
 ```
 *(※ `~/yue2/` を指定することで、ログインユーザーのホームディレクトリ配下に自動配置される)*
 

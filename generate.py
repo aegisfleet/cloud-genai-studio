@@ -6,12 +6,13 @@ from pathlib import Path
 import torch
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Generate music with YuE2 (RTX 3060 optimized)")
+    parser = argparse.ArgumentParser(description="Generate music with YuE2 (Google Cloud NVIDIA L4 optimized)")
     parser.add_argument("--style", type=str, default="J-Pop, emotional female vocal, dynamic piano, upbeat anime opening", help="Style / genre tags")
     parser.add_argument("--lyrics", type=str, default="", help="Lyrics with section tags, e.g. [verse], [chorus]")
     parser.add_argument("--lyrics-file", type=str, default=None, help="Path to text file containing lyrics")
     parser.add_argument("--cot", type=str, choices=["full", "melody", "off"], default="full", help="CoT mode")
     parser.add_argument("--abc-file", type=str, default=None, help="Path to reference ABC notation file (.abc)")
+    parser.add_argument("--ode-steps", type=int, default=32, help="ODE steps for audio synthesis (default: 32)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed")
     parser.add_argument("--output", type=str, default="outputs/song.flac", help="Output audio file path (.flac or .wav)")
     return parser.parse_args()
@@ -58,15 +59,19 @@ def main():
         print(f"Loaded reference ABC score from: {args.abc_file}")
 
     from yue2 import YuE2Pipeline
+    from yue2.protocol import GenerationConfig
 
-    print("\nLoading YuE2 Pipeline...")
+    gen_config = GenerationConfig(ode_steps=args.ode_steps)
+
+    print("\nLoading YuE2 Pipeline (NVIDIA L4 24GB Optimized)...")
     pipe = YuE2Pipeline.from_pretrained(
         "m-a-p/YuE2-3B",
         vae="m-a-p/YuE2-Vae",
         device="cuda" if torch.cuda.is_available() else "cpu",
-        backend="torch-eager",
-        offload_ar=True,
-        vae_core_frames=512,
+        backend="torch",
+        offload_ar=False,
+        vae_core_frames=1024,
+        generation_config=gen_config,
         progress=True
     )
 
