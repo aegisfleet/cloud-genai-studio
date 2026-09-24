@@ -18,6 +18,9 @@ outputs/*
 *.mp4
 *.ogg
 
+# Temporary generated scripts
+gcp/run_cloud_job.sh
+
 # OS specific files
 .DS_Store
 Thumbs.db
@@ -26,6 +29,3 @@ Thumbs.db
 .idea/
 .vscode/
 *.swp
-
-# Third-party tools
-tools/jizura/

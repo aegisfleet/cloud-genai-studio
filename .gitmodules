@@ -1,0 +1,3 @@
+[submodule "tools/jizura"]
+	path = tools/jizura
+	url = https://github.com/852wa/JIZURA

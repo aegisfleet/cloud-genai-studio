@@ -1,21 +1,36 @@
 @echo off
 chcp 65001 > nul
+title JIZURA Lyric Motion Studio
+
 echo ========================================================
-echo Starting JIZURA Lyric Motion Video Studio (Local Edition)
+echo   JIZURA Lyric Motion Video Studio (Auto-Update Enabled)
 echo ========================================================
 echo.
 
 if not exist "%~dp0tools\jizura\index.html" (
     echo [Info] JIZURA not found in tools/jizura.
     echo [Info] Cloning JIZURA repository into tools/jizura...
-    git clone --depth 1 https://github.com/852wa/JIZURA "%~dp0tools\jizura"
+    git clone https://github.com/852wa/JIZURA "%~dp0tools\jizura"
+) else (
+    echo [Info] Checking and updating JIZURA to the latest version...
+    git -C "%~dp0tools\jizura" pull
 )
 
-echo [Source Audio]: outputs\10deg_take3_expressive.wav
-echo [Source Lyrics]: examples\lyrics\10deg_jizura_lyrics.lrc
 echo.
-echo Opening JIZURA in your default browser...
+echo --------------------------------------------------------
+echo [Active Project Audio]:
+echo   outputs\weight_of_the_world_celtic_sacred.wav
+echo.
+echo [Active Project Lyrics (JIZURA Motion Tags)]:
+echo   outputs\weight_of_the_world_jizura.lrc
+echo --------------------------------------------------------
+echo.
+echo Opening JIZURA Studio in your default browser...
 start "" "%~dp0tools\jizura\index.html"
 echo.
-echo Ready! Drag and drop the WAV file and paste the LRC lyrics.
+echo Ready!
+echo 1. Drag and drop the WAV audio into JIZURA.
+echo 2. Copy and paste the contents of weight_of_the_world_jizura.lrc.
+echo 3. Customize font/theme and export video!
+echo.
 pause

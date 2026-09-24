@@ -19,6 +19,9 @@ def parse_args():
     parser.add_argument("--cfg-scale", type=float, default=None, help="Classifier-Free Guidance scale (default: None / 1.0)")
     parser.add_argument("--seed", type=int, default=42, help="RNG seed")
     parser.add_argument("--output", type=str, default="outputs/song.flac", help="Output audio file path (.flac or .wav)")
+    parser.add_argument("--backend", type=str, choices=["torch", "torch-eager", "vllm"], default="torch", help="PyTorch backend engine (default: torch, use torch-eager for RTX 3060 / Windows)")
+    parser.add_argument("--offload-ar", action="store_true", help="Enable CPU offload for AR model to save VRAM on 12GB GPUs")
+    parser.add_argument("--vae-core-frames", type=int, default=1024, help="VAE tile frame count (1024 for 24GB, 512 for 12GB)")
     return parser.parse_args()
 
 SAMPLE_LYRICS = """[verse]
@@ -67,14 +70,14 @@ def main():
 
     gen_config = GenerationConfig(ode_steps=args.ode_steps)
 
-    print("\nLoading YuE2 Pipeline (NVIDIA L4 24GB Optimized)...")
+    print(f"\nLoading YuE2 Pipeline (backend={args.backend}, offload_ar={args.offload_ar}, vae_core_frames={args.vae_core_frames})...")
     pipe = YuE2Pipeline.from_pretrained(
         "m-a-p/YuE2-3B",
         vae=args.vae,
         device="cuda" if torch.cuda.is_available() else "cpu",
-        backend="torch",
-        offload_ar=False,
-        vae_core_frames=1024,
+        backend=args.backend,
+        offload_ar=args.offload_ar,
+        vae_core_frames=args.vae_core_frames,
         generation_config=gen_config,
         progress=True
     )
