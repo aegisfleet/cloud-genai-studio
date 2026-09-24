@@ -1,13 +1,13 @@
 # YuE2 Music Generation Studio
 
-音楽生成基盤モデル **YuE2 (YuE2-3B)** を活用し、ローカル環境（RTX 3060 12GB）および **Google Cloud (NVIDIA L4 GPU Spot インスタンス)** で高品質な楽曲を生成・編集・動画化するためのオールインワン作業環境です。
+音楽生成基盤モデル **YuE2 (YuE2-3B)** を活用し、**Google Cloud (NVIDIA L4 GPU Spot インスタンス)** で高品質な楽曲を生成し、ローカル環境で編集・動画化するためのオールインワン作業環境です。
 
 ---
 
 ## 🌟 主な特徴
 
 1. **Google Cloud (NVIDIA L4 Spot) 最適化**:
-   * **超高速生成**: CUDA Graph (`backend="torch"`)、CPUオフロード廃止 (`offload_ar=False`)、VAEタイル拡大 (`vae_core_frames=1024`) により、2分〜3分の楽曲を約1分半〜2分で高速生成。
+   * **超高速生成**: CUDA Graph (`backend="torch"`), CPUオフロード廃止 (`offload_ar=False`), VAEタイル拡大 (`vae_core_frames=1024`) により、2分〜3分の楽曲を約1分半〜2分で高速生成。
    * **超低コスト & 最小構成**: `g2-standard-4` (4 vCPU, 16GB RAM + 8GB Swap, 1x L4 24GB VRAM) の Spot インスタンスを採用。1曲あたりのクラウド費用は約数円。
    * **完全自動化ワンコマンド**: PowerShell スクリプト 1本で「インスタンス起動 -> 環境構築 -> 楽曲生成（単曲 or 複数テイク一括） -> ローカル `outputs/` へ回収 -> インスタンス自動停止」まで完全自動完結。
 2. **ABC 楽譜プロンプト対応**:
@@ -29,9 +29,8 @@ YuE2/
 ├── GCP_SETUP_GUIDE.md            # Google Cloud (L4 Spot) 完全再現手順書
 ├── requirements.txt              # 必要依存パッケージ
 ├── start_jizura.bat              # JIZURA 自動更新＆起動ランチャー
-├── start_webui.bat               # ローカル Gradio Web UI 起動ランチャー
 │
-├── generate.py                   # 楽曲生成コア CLI (L4 / RTX 3060 両対応)
+├── generate.py                   # 楽曲生成コア CLI (Google Cloud L4 Spot 最適化)
 │
 ├── gcp/                          # Google Cloud 自動化スクリプト
 │   ├── run_cloud_generation.ps1  # インスタンス起動〜生成〜取得〜停止の一括自動化オーケストレーター
