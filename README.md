@@ -29,7 +29,7 @@
 | **YuE2-3B** | 🎵 音楽生成 | • ABC楽譜プロンプトによる既存曲アレンジ・耳コピ<br>• 歌詞改行と休符の一致による高精度歌唱<br>• CUDA Graph / 24GB VRAMフル活用 | 約 1分半 〜 2分 / 曲 (2〜3分尺) | [YuE2 ガイド](file:///D:/Work/YuE2/models/yue2/README.md) |
 | **Wan2.2-S2V** | 🗣️ 音声駆動動画 | • 14B Scaled FP8 による高精度リップシンク<br>• 先頭4フレームスキップによるディレイ解消<br>• 77f単位マルチチャンクによる15秒超の長尺生成 | 約 4分 15秒 / 5秒動画 (640x640) | [Wan2.2 ガイド](file:///D:/Work/YuE2/models/wan2_2_s2v/README.md) |
 | **MiniMax H3** | 🎥 超高品質動画 | • Ref2VA (Reference to Video+Audio) 準拠<br>• 歯並び・表情破綻ゼロの最高峰リアリズム<br>• DiT INT8 + Qwen3VL NVFP4 量子化 | 約 6分 30秒 / 5秒動画 (640x640) | [MiniMax H3 ガイド](file:///D:/Work/YuE2/models/minimax_h3/README.md) |
-| **Qwen-Image 2.1** | 🎨 画像生成 (1K/2K) | • 7B DiT / 統合 Text-to-Image & 画像編集<br>• 2K (2048x2048) ネイティブ生成 & 超解像対応<br>• 4-bit NF4 量子化 + Tiled VAE で 16GB RAM / L4 動作 | 約 62秒 (1K) / 約 8分17秒 (2K NF4) | [Qwen-Image ガイド](file:///D:/Work/YuE2/models/qwen_image_2_1/README.md) |
+| **Qwen-Image 2.1** | 🎨 画像生成 (1K/2K) | • 7B DiT / 統合 Text-to-Image & 画像編集<br>• 2K (2048x2048) ネイティブ生成 & 超解像対応<br>• ホラー・戦闘の無検閲生成 & 連続バッチ生成対応 | 約 1分50秒 (1Kバッチ) / 約 8分17秒 (2K NF4) | [Qwen-Image ガイド](file:///D:/Work/YuE2/models/qwen_image_2_1/README.md) |
 
 ---
 
@@ -57,9 +57,15 @@ cloud-genai-studio/
 │   │   ├── workflows/             # ComfyUI パイプライン定義 JSON
 │   │   └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh 等)
 │   │
-│   └── minimax_h3/                # 🎥 MiniMax H3 (超高品質 Ref2VA 動画)
-│       ├── README.md              # プロンプト記法・ベンチマーク
-│       ├── generate.py            # MiniMax H3 生成 CLI
+│   ├── minimax_h3/                # 🎥 MiniMax H3 (超高品質 Ref2VA 動画)
+│   │   ├── README.md              # プロンプト記法・ベンチマーク
+│   │   ├── generate.py            # MiniMax H3 生成 CLI
+│   │   └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh 等)
+│   │
+│   └── qwen_image_2_1/            # 🎨 Qwen-Image 2.1 (画像生成・2K・バッチ)
+│       ├── README.md              # 3大アプローチ・連続生成ノウハウ・NSFW検証
+│       ├── generate.py            # 単発画像生成 CLI (Approach A/B/C)
+│       ├── batch_generate.py      # 汎用連続バッチ生成 CLI (自動レジューム)
 │       └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh 等)
 │
 ├── tools/                         # 【共通制作・ポストプロダクションツール】
