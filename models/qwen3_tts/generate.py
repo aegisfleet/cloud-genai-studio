@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import time
 import argparse
@@ -7,6 +8,26 @@ import torch
 import numpy as np
 import soundfile as sf
 from qwen_tts import Qwen3TTSModel
+
+# 固有名詞・アルファベットの日本語読み仮名マップ
+DEFAULT_PRONUNCIATION_MAP = {
+    r"Qwen3[-_]?TTS": "クウェンスリー・ティーティーエス",
+    r"Qwen3": "クウェンスリー",
+    r"Qwen": "クウェン",
+    r"TTS": "ティーティーエス",
+    r"Google\s+Cloud": "グーグルクラウド",
+    r"L4": "エルフォー",
+    r"T4": "ティーフォー",
+    r"VRAM": "ブイラム",
+    r"GPU": "ジーピーユー",
+}
+
+def normalize_pronunciation(text: str) -> str:
+    """アルファベットや技術用語を全話者共通のカタカナ発音に正規化する"""
+    normalized = text
+    for pattern, reading in DEFAULT_PRONUNCIATION_MAP.items():
+        normalized = re.sub(pattern, reading, normalized, flags=re.IGNORECASE)
+    return normalized
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Qwen3-TTS Japanese Speech Generation")
@@ -46,6 +67,11 @@ def parse_args():
         help="Disable automatic tail padding ('……。') that prevents sentence-end cutoffs",
     )
     parser.add_argument(
+        "--no_pronounce_norm",
+        action="store_true",
+        help="Disable automatic pronunciation normalization (e.g. Qwen3 -> クウェンスリー)",
+    )
+    parser.add_argument(
         "--pad_silence",
         type=float,
         default=0.5,
@@ -79,8 +105,12 @@ def main():
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    # 末尾途切れ防止処理 (ユーザー検証で効果が確認された三点リーダー付与)
+    # 1. 発音正規化 (アルファベット・固有名詞のカタカナ統一)
     input_text = args.text
+    if not args.no_pronounce_norm:
+        input_text = normalize_pronunciation(input_text)
+
+    # 2. 末尾途切れ防止処理 (三点リーダー付与)
     if not args.no_tail_padding:
         input_text = input_text.rstrip("。") + "……。"
 
@@ -93,9 +123,10 @@ def main():
     print(f"Language       : {args.language}")
     print(f"Instruct       : {args.instruct}")
     print(f"Temperature    : {args.temperature}")
+    print(f"Pad Silence    : {args.pad_silence}s")
     print(f"Input Text     : {args.text}")
     if input_text != args.text:
-        print(f"Processed Text : {input_text} (末尾途切れ防止パディング適用)")
+        print(f"Processed Text : {input_text}")
     print(f"Output File    : {output_file}")
     print("==================================================")
 

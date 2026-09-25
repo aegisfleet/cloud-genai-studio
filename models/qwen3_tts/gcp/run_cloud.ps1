@@ -1,4 +1,4 @@
-# Qwen3-TTS Google Cloud L4 Generation Automation Script
+﻿# Qwen3-TTS Google Cloud L4 Generation Automation Script
 param (
     [string]$InstanceName = "qwen3-tts-vm",
     [string]$Zone = "asia-northeast1-b",
@@ -99,9 +99,16 @@ $remoteOutPath = "outputs/$remoteOutName"
 
 $noTailFlag = if ($NoTailPadding) { "--no_tail_padding" } else { "" }
 
-# Execute on remote VM
-$cmd = "~/miniconda3/envs/qwen3-tts/bin/python generate.py --text `"$Text`" --speaker $Speaker --language $Language --instruct `"$Instruct`" --temperature $Temperature --pad_silence $PadSilence --output `"$remoteOutPath`" $noTailFlag"
-gcloud compute ssh $InstanceName --zone=$Zone --command="$cmd"
+# 一時ジョブスクリプトを作成して確実にUTF-8で転送
+$runJobContent = "#!/bin/bash`nset -e`n~/miniconda3/envs/qwen3-tts/bin/python generate.py --text `"$Text`" --speaker $Speaker --language $Language --instruct `"$Instruct`" --temperature $Temperature --pad_silence $PadSilence --output `"$remoteOutPath`" $noTailFlag`n"
+
+$localJobScript = "$PSScriptRoot\run_cloud_job.sh"
+[System.IO.File]::WriteAllText($localJobScript, $runJobContent, [System.Text.UTF8Encoding]::new($false))
+
+gcloud compute scp $localJobScript "${InstanceName}:run_cloud_job.sh" --zone=$Zone
+Remove-Item -LiteralPath $localJobScript -Force -ErrorAction SilentlyContinue
+
+gcloud compute ssh $InstanceName --zone=$Zone --command="bash run_cloud_job.sh"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Audio generation failed on remote VM."
