@@ -8,10 +8,27 @@ ComfyUI REST API を経由して MiniMax H3 (DiT int8 convrot + Qwen3VL nvfp4 + 
 import argparse
 import json
 import os
+import re
 import sys
 import time
 import urllib.parse
 import urllib.request
+
+
+def wait_for_server(server_url: str, timeout: int = 120) -> bool:
+    """ComfyUI サーバーの起動と応答を待機する。"""
+    print(f"[Wait] Checking ComfyUI server at {server_url} ...")
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with urllib.request.urlopen(f"{server_url}/system_stats", timeout=5) as resp:
+                if resp.status == 200:
+                    print(f"[Ready] ComfyUI server is online! ({time.time() - start:.1f}s waited)")
+                    return True
+        except Exception:
+            time.sleep(3)
+    print(f"[Timeout] ComfyUI server failed to respond within {timeout}s.")
+    return False
 
 
 def upload_file(server_url: str, file_path: str, subfolder: str = "") -> str:
@@ -49,30 +66,41 @@ def upload_file(server_url: str, file_path: str, subfolder: str = "") -> str:
         sys.exit(1)
 
 
+def format_prompt(prompt_text: str) -> str:
+    """SNS/Director用の @[character ref] 記法などを ComfyUI MiniMaxH3 の <Picture 1> 記法に変換する。"""
+    cleaned = prompt_text
+    # @[character ref], @[character], @[image] などのタグを <Picture 1> に置換
+    cleaned = re.sub(r"@\[(?:character(?:\s*ref)?|image|pic)\]", "<Picture 1>", cleaned, flags=re.IGNORECASE)
+    
+    # もし <Picture 1> が含まれていない場合、先頭に付与
+    if "<Picture 1>" not in cleaned:
+        cleaned = f"<Picture 1> {cleaned}"
+    
+    return cleaned.strip()
+
+
 def build_ref2va_workflow(
     image_name: str,
-    audio_name: str,
-    prompt_text: str,
+    audio_name: str = "",
+    prompt_text: str = "",
     width: int = 640,
     height: int = 640,
-    length: int = 124,
+    length: int = 360,
     steps: int = 4,
     seed: int = 42,
     output_prefix: str = "video/MiniMax_H3_Ref2VA",
 ) -> dict:
     """MiniMax H3 ReferenceToVideo ワークフローを構築する。"""
-    return {
+    formatted_prompt = format_prompt(prompt_text)
+
+    workflow = {
         "1": {
             "inputs": {"image": image_name},
             "class_type": "LoadImage",
         },
-        "2": {
-            "inputs": {"audio": audio_name},
-            "class_type": "LoadAudio",
-        },
         "3": {
             "inputs": {
-                "unet_name": "minimax_h3_fl2va_pruned_int8_convrot.safetensors",
+                "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
                 "weight_dtype": "default",
             },
             "class_type": "UNETLoader",
@@ -94,7 +122,7 @@ def build_ref2va_workflow(
         },
         "7": {
             "inputs": {
-                "lora_name": "minimax_h3_fl2v_turbo_4step_v1.0_768p_comfyui_bf16.safetensors",
+                "lora_name": "minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors",
                 "strength_model": 1.0,
                 "model": ["3", 0],
             },
@@ -105,13 +133,12 @@ def build_ref2va_workflow(
                 "clip": ["4", 0],
                 "vae": ["5", 0],
                 "audio_vae": ["6", 0],
-                "prompt": prompt_text,
+                "prompt": formatted_prompt,
                 "width": int(width),
                 "height": int(height),
                 "length": int(length),
                 "ref_image_size": "match",
                 "ref_images.ref_image_0": ["1", 0],
-                "ref_audios.ref_audio_0": ["2", 0],
             },
             "class_type": "MiniMaxH3ReferenceToVideo",
         },
@@ -181,16 +208,26 @@ def build_ref2va_workflow(
         },
     }
 
+    # 音声入力が提供されている場合は LoadAudio を追加してバインド
+    if audio_name:
+        workflow["2"] = {
+            "inputs": {"audio": audio_name},
+            "class_type": "LoadAudio",
+        }
+        workflow["8"]["inputs"]["ref_audios.ref_audio_0"] = ["2", 0]
 
-def wait_for_completion(server_url: str, prompt_id: str, timeout: int = 1800) -> dict:
+    return workflow
+
+
+def wait_for_completion(server_url: str, prompt_id: str, timeout: int = 3600) -> dict:
     """ComfyUI の実行完了を待機し、出力ファイル情報を取得する。"""
     start_time = time.time()
     last_print = 0
 
     while time.time() - start_time < timeout:
-        time.sleep(3)
+        time.sleep(5)
         elapsed = time.time() - start_time
-        if elapsed - last_print > 15:
+        if elapsed - last_print > 20:
             print(f"[Progress] Generation running... ({elapsed:.1f}s elapsed)")
             last_print = elapsed
 
@@ -222,12 +259,12 @@ def download_video(server_url: str, outputs: dict, output_dir: str) -> str:
     for node_id, output in outputs.items():
         if "images" in output:
             for item in output["images"]:
-                if item.get("filename", "").endswith((".mp4", ".mov", ".mkv")):
+                if item.get("filename", "").endswith((".mp4", ".mov", ".mkv", ".webm")):
                     video_info = item
                     break
         if "video" in output:
             for item in output["video"]:
-                if item.get("filename", "").endswith((".mp4", ".mov", ".mkv")):
+                if item.get("filename", "").endswith((".mp4", ".mov", ".mkv", ".webm")):
                     video_info = item
                     break
 
@@ -248,39 +285,56 @@ def download_video(server_url: str, outputs: dict, output_dir: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="MiniMax H3 CLI")
-    parser.add_argument("--image", type=str, required=True, help="Input portrait image (JPG/PNG)")
-    parser.add_argument("--audio", type=str, required=True, help="Input speech audio (MP3/WAV)")
+    parser.add_argument("--image", type=str, required=True, help="Input character image (PNG/WEBP/JPG)")
+    parser.add_argument("--audio", type=str, default="", help="Optional input speech or reference audio (MP3/WAV)")
     parser.add_argument(
         "--prompt",
         type=str,
-        default="<Picture 1> <Audio 1> A professional Japanese woman talking naturally and looking directly at the camera.",
-        help="Prompt text containing <Picture 1> and <Audio 1>",
+        default="",
+        help="Prompt text containing @[character ref] or <Picture 1>",
     )
+    parser.add_argument("--prompt_file", type=str, default="", help="Path to text file containing prompt")
     parser.add_argument("--width", type=int, default=640, help="Video width (default: 640)")
     parser.add_argument("--height", type=int, default=640, help="Video height (default: 640)")
-    parser.add_argument("--length", type=int, default=124, help="Frames count at 24fps (124 = ~5.1s)")
+    parser.add_argument("--length", type=int, default=360, help="Frames count at 24fps (360 = 15s, 124 = ~5.1s)")
     parser.add_argument("--steps", type=int, default=4, help="Sampling steps (default: 4)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--server_url", type=str, default="http://127.0.0.1:8188", help="ComfyUI server URL")
     parser.add_argument("--output_dir", type=str, default="./outputs", help="Directory to save generated video")
     args = parser.parse_args()
 
+    prompt_text = args.prompt
+    if args.prompt_file and os.path.exists(args.prompt_file):
+        with open(args.prompt_file, "r", encoding="utf-8") as f:
+            prompt_text = f.read().strip()
+
+    if not prompt_text:
+        prompt_text = "<Picture 1> A fast, striking character reveal."
+
     print("=== MiniMax H3 Reference-to-Video+Audio CLI ===")
     print(f"Image: {args.image}")
-    print(f"Audio: {args.audio}")
-    print(f"Resolution: {args.width}x{args.height}, Length: {args.length} frames")
+    if args.audio:
+        print(f"Audio: {args.audio}")
+    else:
+        print("Audio: (None - Model will synthesize audio/BGM natively)")
+    # 1. Wait for ComfyUI and Upload assets
+    if not wait_for_server(args.server_url, timeout=120):
+        print(f"[Error] Could not reach ComfyUI server at {args.server_url}")
+        sys.exit(1)
 
-    # 1. Upload assets
-    print("[1/3] Uploading input files to ComfyUI...")
+    print("[1/3] Uploading input image to ComfyUI...")
     uploaded_image = upload_file(args.server_url, args.image)
-    uploaded_audio = upload_file(args.server_url, args.audio)
+    uploaded_audio = ""
+    if args.audio and os.path.exists(args.audio):
+        print("[1/3] Uploading input audio to ComfyUI...")
+        uploaded_audio = upload_file(args.server_url, args.audio)
 
     # 2. Build and submit workflow
     print("[2/3] Submitting workflow...")
     workflow = build_ref2va_workflow(
         image_name=uploaded_image,
         audio_name=uploaded_audio,
-        prompt_text=args.prompt,
+        prompt_text=prompt_text,
         width=args.width,
         height=args.height,
         length=args.length,
@@ -306,7 +360,7 @@ def main():
 
     # 3. Wait and download
     print("[3/3] Waiting for generation...")
-    outputs = wait_for_completion(args.server_url, prompt_id)
+    outputs = wait_for_completion(args.server_url, prompt_id, timeout=3600)
     saved_file = download_video(args.server_url, outputs, args.output_dir)
     print(f"All done! Saved file: {saved_file}")
 
