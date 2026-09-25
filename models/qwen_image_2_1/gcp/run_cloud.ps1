@@ -1,18 +1,19 @@
 # Qwen-Image-2.1 Google Cloud L4 Spot Generation & Benchmarking Script
 param (
-    [string]$InstanceName = "qwen-image-l4-spot",
-    [string]$Zone = "asia-east1-a",
-    [string]$MachineType = "g2-standard-4",
+    [string]$InstanceName = "qwen-image-l4-b",
+    [string]$Zone = "asia-east1-b",
+    [string]$MachineType = "g2-standard-8",
     [string]$BootDiskSize = "100GB",
     [string]$ImageFamily = "pytorch-2-9-cu129-ubuntu-2204-nvidia-580",
     [string]$ImageProject = "deeplearning-platform-release",
     [string]$Approach = "b", # "b" (Recommended: 2K Native + 4-bit NF4), "a" (2K Native + Tiled VAE), "c" (Fast: 1K Native + 2K Upscale)
+    [string]$Style = "none", # "none", "anime", "realistic", "watercolor", "cinematic"
     [string]$Prompt = "A hyper-detailed cinematic portrait of a cyberpunk girl in neo-tokyo with neon lights and rain reflections, 8k resolution, masterpiece, intricate lighting",
-    [string]$NegativePrompt = "worst quality, low quality, blurry, distorted, deformed, bad anatomy, text, watermark",
+    [string]$NegativePrompt = "",
     [int]$Width = 2048,
     [int]$Height = 2048,
     [int]$Steps = 15,
-    [float]$GuidanceScale = 4.0,
+    [float]$GuidanceScale = 0.0, # 0.0 means auto (uses style preset default)
     [int]$Seed = 42,
     [string]$OutputFilename = "qwen_output.png",
     [string]$OutputDir = "",
@@ -132,17 +133,19 @@ if ($needsSetup -notmatch "READY" -or $SetupOnly) {
 
 # 5. Execute Generation & Benchmark
 Write-Host "`n=== 5. Running Generation Job on L4 GPU ===" -ForegroundColor Cyan
+$cfgParam = if ($GuidanceScale -gt 0.0) { "--guidance-scale $GuidanceScale \" } else { "" }
 $runCmd = @"
 export PATH="/home/$remoteUser/.local/bin:`$PATH"
 cd $remoteHome
 python3 generate.py \
   --approach $Approach \
+  --style $Style \
   --prompt "$Prompt" \
   --negative-prompt "$NegativePrompt" \
   --width $Width \
   --height $Height \
   --steps $Steps \
-  --guidance-scale $GuidanceScale \
+  $cfgParam
   --seed $Seed \
   --output "$remoteHome/outputs/$OutputFilename" \
   --benchmark

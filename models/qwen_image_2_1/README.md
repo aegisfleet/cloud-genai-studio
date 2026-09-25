@@ -76,6 +76,32 @@ Alibaba が 2026年9月にリリースした最新の画像生成基盤モデル
 
 ---
 
+## 🎨 画風別スタイル制御（アニメ調・リアル調・水彩調・映画調）の実機検証
+
+Qwen-Image 2.1 において、「アニメ調」「リアル生写真調」などの画風を自在にコントロールする手法を検証した。
+
+Qwen-Image 2.1 は巨大マルチモーダル言語モデル（Qwen3-VL）をテキストエンコーダとして内蔵しているため、**「スタイルコントラクト（文脈付きスタイル記述 ＋ ネガティブ制御 ＋ 最適 CFG スケール）」** を組み合わせることで、LoRA なしでも極めて高精度な描き分けが可能である。
+
+### 全8パターンの実機生成結果（同一被写体での画風比較）
+成果物は [outputs/style_comparison/](file:///D:/Work/YuE2/outputs/style_comparison/) に格納されている。
+
+| 被写体 | ① アニメ調 (`anime`) | ② リアル写真調 (`realistic`) | ③ 水彩画調 (`watercolor`) | ④ シネマティック映画調 (`cinematic`) |
+| :--- | :--- | :--- | :--- | :--- |
+| **桜並木の女子学生** | `sakura_student_01_anime_cel.png`<br>• 京都アニメーション/新海誠風<br>• 2Dセル塗り・青セーラー服・桜光彩 | `sakura_student_02_realistic_photo.png`<br>• 35mm f/1.8 一眼レフ実写<br>• 本物の日本人女子学生・肌質感・被写界深度 | `sakura_student_03_watercolor.png`<br>• 透明水彩絵具の淡い滲み<br>• 水彩紙テクスチャ・手描きタッチ | `sakura_student_04_cinematic_movie.png`<br>• 岩井俊二監督風の映画スチール<br>• 逆光リムライト・35mmフィルム粒子 |
+| **雨夜のサイバーパンク少女** | `cyberpunk_girl_01_anime_cel.png`<br>• アニメ線画・鮮明なネオン反射 | `cyberpunk_girl_02_realistic_photo.png`<br>• 新宿路地裏のリアルポートレート | `cyberpunk_girl_03_watercolor.png`<br>• 水滴と水彩の溶け込み・芸術的表現 | `cyberpunk_girl_04_cinematic_movie.png`<br>• アナモフィック・映画的一幕 |
+
+### 画風スタイルプリセットの仕様（CLI 組み込み済み）
+CLI（`generate.py` / `batch_generate.py`）に `--style` 引数を追加しており、以下のプリセットを自動適用できる。
+
+| スタイル名 | 引数指定 | 主なプロンプト補正 | ネガティブプロンプト | 推奨 CFG (`true_cfg_scale`) |
+| :--- | :--- | :--- | :--- | :--- |
+| **アニメ調** | `--style anime` | Japanese modern anime illustration, clean crisp line art, vibrant cel-shaded coloring, 2D anime aesthetic... | photorealistic, realistic skin, pores, 3d render, live action | **5.0**（主線と色彩を際立たせる） |
+| **リアル写真調** | `--style realistic` | Hyperrealistic raw photographic portrait, shot on 35mm lens, f/1.8, authentic skin texture with subtle pores... | anime, illustration, painting, 3d render, CGI, cartoon, smooth plastic skin | **3.5**（肌の生々しさと階調を保つ） |
+| **水彩画調** | `--style watercolor` | Traditional watercolor painting on cold-press textured paper, visible bleeding paint edges, soft color washes... | photorealistic, 3d render, digital vector, sharp harsh digital lines | **4.5** |
+| **映画調** | `--style cinematic` | Cinematic movie still, 35mm anamorphic lens, dramatic chiaroscuro lighting, subtle film grain... | cartoon, anime, 3d render, plastic, oversaturated | **4.0** |
+
+---
+
 ## 📊 2K 画像生成における 3大アプローチの比較（単発用）
 
 | 比較項目 | **【アプローチ B】★推奨・最高画質**<br>2K Native ＋ 4-bit NF4 量子化 | **【アプローチ C】★最速・高タイパ**<br>1K Native ＋ 2K 超解像 | **【アプローチ A】**<br>2K Native ＋ Tiled VAE (BF16) |

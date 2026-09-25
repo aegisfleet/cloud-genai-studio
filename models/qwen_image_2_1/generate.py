@@ -19,15 +19,43 @@ def get_system_ram_gb():
     mem = psutil.virtual_memory()
     return mem.used / (1024 ** 3), mem.total / (1024 ** 3)
 
+STYLE_PRESETS = {
+    "anime": {
+        "name": "アニメ調 (Anime / Cel-Shaded)",
+        "prefix": "Japanese modern anime illustration, clean crisp line art, vibrant cel-shaded coloring, 2D anime aesthetic, Kyoto Animation visual style, expressive large anime eyes, smooth color gradients, masterpiece digital illustration",
+        "negative": "photorealistic, realistic human skin texture, pores, 3d render, live action, real life photography, western cartoon, plastic 3d",
+        "cfg": 5.0
+    },
+    "realistic": {
+        "name": "リアル写真調 (Hyperrealistic Raw Photo)",
+        "prefix": "Hyperrealistic raw photographic portrait, shot on 35mm lens, f/1.8 aperture, authentic natural skin texture with subtle pores and imperfections, soft volumetric natural lighting, shallow depth of field, unedited DSLR photo, 8k resolution, Kodak Portra film aesthetic",
+        "negative": "anime, illustration, drawing, painting, 3d render, CGI, cartoon, airbrushed, plastic smooth skin, oversaturated videogame graphic",
+        "cfg": 3.5
+    },
+    "watercolor": {
+        "name": "水彩画調 (Traditional Watercolor)",
+        "prefix": "Traditional watercolor painting on cold-press textured paper, visible bleeding paint edges, soft pastel color washes, hand-drawn organic brush strokes, artisanal fine art, translucent delicate watercolor pigments, splashing water droplets",
+        "negative": "photorealistic, 3d render, digital vector, sharp harsh digital lines, computer graphics, glossy plastic",
+        "cfg": 4.5
+    },
+    "cinematic": {
+        "name": "シネマティック映画調 (Cinematic Film Still)",
+        "prefix": "Cinematic movie still, 35mm anamorphic lens, dramatic chiaroscuro volumetric lighting, subtle 35mm film grain, muted cinematic color grading, atmospheric rim light, Panavision film aesthetic, award-winning cinematography",
+        "negative": "cartoon, anime, 3d render, plastic, oversaturated, amateur snapshot",
+        "cfg": 4.0
+    }
+}
+
 def main():
     parser = argparse.ArgumentParser(description="Qwen-Image-2.1 Multi-Approach Comparison CLI")
     parser.add_argument("--prompt", type=str, default="A hyper-detailed cinematic portrait of a cyberpunk girl in neo-tokyo with neon lights and rain reflections, 8k resolution, masterpiece, intricate lighting", help="Text prompt")
-    parser.add_argument("--negative-prompt", type=str, default="worst quality, low quality, blurry, distorted, deformed, bad anatomy, text, watermark", help="Negative prompt")
+    parser.add_argument("--negative-prompt", type=str, default="", help="Negative prompt (if empty, uses style default)")
+    parser.add_argument("--style", type=str, choices=["none", "anime", "realistic", "watercolor", "cinematic"], default="none", help="Visual art style preset: 'anime', 'realistic', 'watercolor', 'cinematic'")
     parser.add_argument("--approach", type=str, choices=["a", "b", "c"], default="b", help="Generation approach: 'b' (Recommended: 2K Native + 4-bit NF4 Quantization), 'a' (2K Native + Tiled VAE), 'c' (Fast: 1K Native + 2K Upscale)")
     parser.add_argument("--width", type=int, default=2048, help="Target image width (default: 2048)")
     parser.add_argument("--height", type=int, default=2048, help="Target image height")
     parser.add_argument("--steps", type=int, default=20, help="Inference steps")
-    parser.add_argument("--guidance-scale", type=float, default=4.0, help="Classifier-Free Guidance Scale (true_cfg_scale)")
+    parser.add_argument("--guidance-scale", type=float, default=None, help="Classifier-Free Guidance Scale (true_cfg_scale). If not set, uses style preset default")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--output", type=str, default="outputs/qwen_comparison.png", help="Output file path")
     parser.add_argument("--model-id", type=str, default="Qwen/Qwen-Image-2.1", help="Hugging Face model ID")
@@ -35,14 +63,28 @@ def main():
 
     args = parser.parse_args()
 
+    # スタイルプリセットの適用
+    active_prompt = args.prompt
+    active_negative = args.negative_prompt
+    active_cfg = args.guidance_scale if args.guidance_scale is not None else 4.0
+
+    if args.style != "none" and args.style in STYLE_PRESETS:
+        preset = STYLE_PRESETS[args.style]
+        active_prompt = f"{preset['prefix']}, {args.prompt}"
+        if not active_negative:
+            active_negative = preset["negative"]
+        if args.guidance_scale is None:
+            active_cfg = preset["cfg"]
+
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
 
     print("=" * 65)
     print(f" Qwen-Image 2.1 Multi-Approach Evaluation: Approach [{args.approach.upper()}]")
     print("=" * 65)
+    print(f"Art Style Preset : {args.style.upper()} ({STYLE_PRESETS[args.style]['name'] if args.style in STYLE_PRESETS else 'None'})")
     print(f"Target Resolution: {args.width}x{args.height}")
     print(f"Inference Steps  : {args.steps}")
-    print(f"Guidance Scale   : {args.guidance_scale}")
+    print(f"Guidance Scale   : {active_cfg}")
     print(f"Seed             : {args.seed}")
     print(f"Output File      : {args.output}")
 
@@ -133,12 +175,12 @@ def main():
 
     with torch.inference_mode():
         result = pipe(
-            prompt=args.prompt,
-            negative_prompt=args.negative_prompt,
+            prompt=active_prompt,
+            negative_prompt=active_negative,
             width=actual_width,
             height=actual_height,
             num_inference_steps=args.steps,
-            true_cfg_scale=args.guidance_scale,
+            true_cfg_scale=active_cfg,
             generator=generator,
             output_resolution=max(actual_width, actual_height),
             use_kv_cache=True

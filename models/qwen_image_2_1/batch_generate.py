@@ -107,14 +107,42 @@ def load_prompts(args):
         },
     ]
 
+STYLE_PRESETS = {
+    "anime": {
+        "name": "アニメ調 (Anime / Cel-Shaded)",
+        "prefix": "Japanese modern anime illustration, clean crisp line art, vibrant cel-shaded coloring, 2D anime aesthetic, Kyoto Animation visual style, expressive large anime eyes, smooth color gradients, masterpiece digital illustration",
+        "negative": "photorealistic, realistic human skin texture, pores, 3d render, live action, real life photography, western cartoon, plastic 3d",
+        "cfg": 5.0
+    },
+    "realistic": {
+        "name": "リアル写真調 (Hyperrealistic Raw Photo)",
+        "prefix": "Hyperrealistic raw photographic portrait, shot on 35mm lens, f/1.8 aperture, authentic natural skin texture with subtle pores and imperfections, soft volumetric natural lighting, shallow depth of field, unedited DSLR photo, 8k resolution, Kodak Portra film aesthetic",
+        "negative": "anime, illustration, drawing, painting, 3d render, CGI, cartoon, airbrushed, plastic smooth skin, oversaturated videogame graphic",
+        "cfg": 3.5
+    },
+    "watercolor": {
+        "name": "水彩画調 (Traditional Watercolor)",
+        "prefix": "Traditional watercolor painting on cold-press textured paper, visible bleeding paint edges, soft pastel color washes, hand-drawn organic brush strokes, artisanal fine art, translucent delicate watercolor pigments, splashing water droplets",
+        "negative": "photorealistic, 3d render, digital vector, sharp harsh digital lines, computer graphics, glossy plastic",
+        "cfg": 4.5
+    },
+    "cinematic": {
+        "name": "シネマティック映画調 (Cinematic Film Still)",
+        "prefix": "Cinematic movie still, 35mm anamorphic lens, dramatic chiaroscuro volumetric lighting, subtle 35mm film grain, muted cinematic color grading, atmospheric rim light, Panavision film aesthetic, award-winning cinematography",
+        "negative": "cartoon, anime, 3d render, plastic, oversaturated, amateur snapshot",
+        "cfg": 4.0
+    }
+}
+
 def main():
     parser = argparse.ArgumentParser(description="Qwen-Image 2.1 汎用バッチ生成スクリプト")
     parser.add_argument("--prompts_file", type=str, default="", help="プロンプト一覧ファイルパス (JSONまたはTXT)")
     parser.add_argument("--output_dir", type=str, default="outputs/batch_results", help="出力ディレクトリ")
+    parser.add_argument("--style", type=str, choices=["none", "anime", "realistic", "watercolor", "cinematic"], default="none", help="画風スタイルプリセット: 'anime', 'realistic', 'watercolor', 'cinematic'")
     parser.add_argument("--width", type=int, default=1024, help="画像幅 (デフォルト: 1024)")
     parser.add_argument("--height", type=int, default=1024, help="画像高さ (デフォルト: 1024)")
     parser.add_argument("--steps", type=int, default=15, help="サンプリングステップ数 (デフォルト: 15)")
-    parser.add_argument("--guidance_scale", type=float, default=4.0, help="ガイダンススケール (true_cfg_scale)")
+    parser.add_argument("--guidance_scale", type=float, default=None, help="ガイダンススケール (true_cfg_scale)。指定なしの場合はスタイル推奨値")
     parser.add_argument("--seed", type=int, default=42, help="ベースシード値")
     parser.add_argument("--approach", type=str, choices=["a", "b"], default="a", 
                         help="Approach A (BF16 素のモデル: 連続生成最速推奨) または B (4-bit NF4)")
@@ -124,13 +152,19 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     prompts = load_prompts(args)
 
+    active_cfg = args.guidance_scale if args.guidance_scale is not None else 4.0
+    if args.style != "none" and args.style in STYLE_PRESETS:
+        if args.guidance_scale is None:
+            active_cfg = STYLE_PRESETS[args.style]["cfg"]
+
     print("=" * 70)
     print(" Qwen-Image 2.1 高速バッチ生成オーケストレーター")
     print("=" * 70)
+    print(f"Art Style Preset  : {args.style.upper()} ({STYLE_PRESETS[args.style]['name'] if args.style in STYLE_PRESETS else 'None'})")
     print(f"Approach Strategy : [{args.approach.upper()}] ({'BF16 高速連続生成' if args.approach == 'a' else '4-bit NF4 量子化'})")
     print(f"Target Resolution : {args.width} x {args.height}")
     print(f"Inference Steps   : {args.steps} steps")
-    print(f"Guidance Scale    : {args.guidance_scale}")
+    print(f"Guidance Scale    : {active_cfg}")
     print(f"Total Prompts     : {len(prompts)} items")
     print(f"Output Directory  : {args.output_dir}")
     print(f"Skip Existing     : {not args.overwrite}")
@@ -216,17 +250,26 @@ def main():
             })
             continue
 
+        # スタイルプリセットに応じたプロンプト合成
+        final_prompt = prompt_text
+        final_negative = "low quality, blurry, deformed anatomy, bad proportions, bad hands, cartoon, 3d render plastic look"
+
+        if args.style != "none" and args.style in STYLE_PRESETS:
+            preset = STYLE_PRESETS[args.style]
+            final_prompt = f"{preset['prefix']}, {prompt_text}"
+            final_negative = preset["negative"]
+
         generator = torch.Generator(device="cuda").manual_seed(args.seed + idx)
 
         gen_start = time.time()
         with torch.inference_mode():
             result = pipe(
-                prompt=prompt_text,
-                negative_prompt=negative_prompt,
+                prompt=final_prompt,
+                negative_prompt=final_negative,
                 width=args.width,
                 height=args.height,
                 num_inference_steps=args.steps,
-                true_cfg_scale=args.guidance_scale,
+                true_cfg_scale=active_cfg,
                 generator=generator
             )
             image = result.images[0]
