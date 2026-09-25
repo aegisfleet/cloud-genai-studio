@@ -1,19 +1,20 @@
 # Qwen-Image-2.1 Google Cloud L4 Spot Generation & Benchmarking Script
 param (
     [string]$InstanceName = "qwen-image-l4-spot",
-    [string]$Zone = "asia-northeast1-a",
+    [string]$Zone = "asia-east1-a",
     [string]$MachineType = "g2-standard-4",
     [string]$BootDiskSize = "100GB",
     [string]$ImageFamily = "pytorch-2-9-cu129-ubuntu-2204-nvidia-580",
     [string]$ImageProject = "deeplearning-platform-release",
+    [string]$Approach = "b", # "b" (Recommended: 2K Native + 4-bit NF4), "a" (2K Native + Tiled VAE), "c" (Fast: 1K Native + 2K Upscale)
     [string]$Prompt = "A hyper-detailed cinematic portrait of a cyberpunk girl in neo-tokyo with neon lights and rain reflections, 8k resolution, masterpiece, intricate lighting",
     [string]$NegativePrompt = "worst quality, low quality, blurry, distorted, deformed, bad anatomy, text, watermark",
     [int]$Width = 2048,
     [int]$Height = 2048,
-    [int]$Steps = 25,
+    [int]$Steps = 15,
     [float]$GuidanceScale = 4.0,
     [int]$Seed = 42,
-    [string]$OutputFilename = "qwen_image_2k.png",
+    [string]$OutputFilename = "qwen_output.png",
     [string]$OutputDir = "",
     [switch]$KeepRunning,
     [switch]$SetupOnly
@@ -40,12 +41,12 @@ if (Test-Path $EnvFile) {
 }
 
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host " Qwen-Image-2.1 Cloud Generation & Benchmark (NVIDIA L4)  " -ForegroundColor Green
+Write-Host " Qwen-Image-2.1 Cloud Generation Studio (NVIDIA L4 Spot)  " -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "Instance   : $InstanceName (Zone: $Zone, Type: $MachineType)"
-Write-Host "Disk Size  : $BootDiskSize"
+Write-Host "Approach   : [$($Approach.ToUpper())] $(switch($Approach.ToLower()){'b'{'2K Native + 4-bit NF4 Quantization (Recommended)'}'a'{'2K Native + Tiled VAE'}'c'{'1K Native + Lanczos 2K Upscale'}default{'Custom'}})"
 Write-Host "Resolution : ${Width}x${Height} ($([math]::Round(($Width * $Height) / (1024 * 1024), 1)) Megapixels)"
-Write-Host "Steps      : $Steps (CFG: $GuidanceScale)"
+Write-Host "Steps      : $Steps (CFG: $GuidanceScale, Seed: $Seed)"
 Write-Host "Prompt     : $Prompt"
 Write-Host "==========================================================" -ForegroundColor Green
 
@@ -99,7 +100,7 @@ if (-not $ready) {
 $remoteUser = (gcloud compute ssh $InstanceName --zone=$Zone --command="whoami").Trim()
 $remoteHome = "/home/$remoteUser/qwen-image"
 
-# 3. Code & Asset Synchronization
+# 3. Code & Script Synchronization
 Write-Host "`n=== 3. Uploading Code and Scripts to Instance ($remoteHome) ===" -ForegroundColor Cyan
 gcloud compute ssh $InstanceName --zone=$Zone --command="mkdir -p $remoteHome/outputs $remoteHome/gcp"
 
@@ -109,13 +110,13 @@ Get-ChildItem -Path "$PSScriptRoot\*.sh" | ForEach-Object {
     [System.IO.File]::WriteAllText($_.FullName, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
-gcloud compute scp "$ModelRoot\generate.py" "${InstanceName}:${remoteHome}/" --zone=$Zone
+gcloud compute scp "$ModelRoot\generate.py" "${InstanceName}:${remoteHome}/generate.py" --zone=$Zone
 gcloud compute scp --recurse "$PSScriptRoot\*.sh" "${InstanceName}:${remoteHome}/gcp/" --zone=$Zone
 gcloud compute ssh $InstanceName --zone=$Zone --command="chmod +x $remoteHome/gcp/*.sh"
 
 # 4. First-time setup check
 Write-Host "`n=== 4. Checking / Setting Up Environment on VM ===" -ForegroundColor Cyan
-$needsSetup = gcloud compute ssh $InstanceName --zone=$Zone --command="python3 -c 'import diffusers, torch' 2>/dev/null && echo 'READY' || echo 'NEEDS_SETUP'"
+$needsSetup = gcloud compute ssh $InstanceName --zone=$Zone --command="python3 -c 'import diffusers, torch, bitsandbytes' 2>/dev/null && echo 'READY' || echo 'NEEDS_SETUP'"
 if ($needsSetup -notmatch "READY" -or $SetupOnly) {
     Write-Host "Running setup.sh on VM..." -ForegroundColor Yellow
     gcloud compute ssh $InstanceName --zone=$Zone --command="bash $remoteHome/gcp/setup.sh"
@@ -125,14 +126,17 @@ if ($needsSetup -notmatch "READY" -or $SetupOnly) {
     }
 } else {
     Write-Host "Environment is already configured and verified." -ForegroundColor Green
+    # Ensure swap is active after reboot
+    gcloud compute ssh $InstanceName --zone=$Zone --command="sudo swapon /swapfile 2>/dev/null || true"
 }
 
 # 5. Execute Generation & Benchmark
-Write-Host "`n=== 5. Running Qwen-Image-2.1 Benchmark Generation on L4 GPU ===" -ForegroundColor Cyan
+Write-Host "`n=== 5. Running Generation Job on L4 GPU ===" -ForegroundColor Cyan
 $runCmd = @"
 export PATH="/home/$remoteUser/.local/bin:`$PATH"
 cd $remoteHome
 python3 generate.py \
+  --approach $Approach \
   --prompt "$Prompt" \
   --negative-prompt "$NegativePrompt" \
   --width $Width \
@@ -157,7 +161,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-# 6. Fetch Generated Image
+# 6. Fetch Generated Output
 Write-Host "`n=== 6. Fetching Generated Output to Local $OutputDir ===" -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 gcloud compute scp "${InstanceName}:${remoteHome}/outputs/$OutputFilename" "$OutputDir/" --zone=$Zone

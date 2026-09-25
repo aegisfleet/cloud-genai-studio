@@ -45,12 +45,34 @@ def upscale_video(input_path: str, output_path: str, target_width: int = 1920, t
     print(f"Successfully created: {output_file} ({output_file.stat().st_size / (1024*1024):.2f} MB)")
 
 
+def upscale_image(input_path: str, output_path: str, target_width: int = 2048, target_height: int = 2048):
+    from PIL import Image
+    input_file = Path(input_path)
+    if not input_file.exists():
+        print(f"Error: Input file '{input_path}' not found.", file=sys.stderr)
+        sys.exit(1)
+
+    output_file = Path(output_path)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Upscaling Image '{input_file.name}' -> '{output_file.name}' ({target_width}x{target_height}) using High-Precision Lanczos...")
+    with Image.open(input_file) as img:
+        upscaled = img.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        upscaled.save(output_file)
+
+    print(f"Successfully created: {output_file} ({output_file.stat().st_size / (1024*1024):.2f} MB)")
+
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Upscale video to 1080p")
-    parser.add_argument("input", help="Path to input video")
-    parser.add_argument("output", help="Path to output 1080p video")
-    parser.add_argument("--width", type=int, default=1920, help="Target width")
-    parser.add_argument("--height", type=int, default=1080, help="Target height")
+    parser = argparse.ArgumentParser(description="Upscale image or video to high resolution (Lanczos / FFmpeg)")
+    parser.add_argument("input", help="Path to input image or video")
+    parser.add_argument("output", help="Path to output upscaled file")
+    parser.add_argument("--width", type=int, default=2048, help="Target width (default: 2048)")
+    parser.add_argument("--height", type=int, default=2048, help="Target height (default: 2048)")
     args = parser.parse_args()
 
-    upscale_video(args.input, args.output, args.width, args.height)
+    in_ext = Path(args.input).suffix.lower()
+    if in_ext in [".png", ".jpg", ".jpeg", ".webp", ".bmp"]:
+        upscale_image(args.input, args.output, args.width, args.height)
+    else:
+        upscale_video(args.input, args.output, args.width, args.height)
