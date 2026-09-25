@@ -22,12 +22,28 @@ DEFAULT_PRONUNCIATION_MAP = {
     r"GPU": "ジーピーユー",
 }
 
-def normalize_pronunciation(text: str) -> str:
-    """アルファベットや技術用語を全話者共通のカタカナ発音に正規化する"""
-    normalized = text
-    for pattern, reading in DEFAULT_PRONUNCIATION_MAP.items():
-        normalized = re.sub(pattern, reading, normalized, flags=re.IGNORECASE)
-    return normalized
+def normalize_text_for_tts(text: str, apply_pronounce: bool = True, apply_tail_padding: bool = True) -> str:
+    """TTS向けにテキストの文頭脱落防止、発音統一、末尾余韻保護を一括適用する"""
+    res = text.strip()
+    
+    # 1. 文頭脱落防止: 挨拶語句の平仮名化＆読点化（「初めまして。」->「はじめまして、」）
+    res = re.sub(r"^初めまして[。、]?", "はじめまして、", res)
+    res = re.sub(r"初めまして[。、]?", "はじめまして、", res)
+
+    # 2. 発音正規化 (アルファベット・固有名詞のカタカナ統一)
+    if apply_pronounce:
+        for pattern, reading in DEFAULT_PRONUNCIATION_MAP.items():
+            res = re.sub(pattern, reading, res, flags=re.IGNORECASE)
+
+    # 3. 末尾途切れ防止処理 (三点リーダー付与)
+    if apply_tail_padding:
+        res = res.rstrip("。") + "……。"
+
+    # 4. 文頭立ち上がり保護 (先頭に微小なクッションスペースを付与)
+    if not res.startswith(" "):
+        res = " " + res
+
+    return res
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Qwen3-TTS Japanese Speech Generation")
@@ -105,14 +121,12 @@ def main():
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
 
-    # 1. 発音正規化 (アルファベット・固有名詞のカタカナ統一)
-    input_text = args.text
-    if not args.no_pronounce_norm:
-        input_text = normalize_pronunciation(input_text)
-
-    # 2. 末尾途切れ防止処理 (三点リーダー付与)
-    if not args.no_tail_padding:
-        input_text = input_text.rstrip("。") + "……。"
+    # テキスト前処理（文頭脱落防止、発音正規化、末尾三点リーダー、先頭クッション）
+    input_text = normalize_text_for_tts(
+        text=args.text,
+        apply_pronounce=not args.no_pronounce_norm,
+        apply_tail_padding=not args.no_tail_padding,
+    )
 
     print("==================================================")
     print(" Qwen3-TTS Speech Generation")
