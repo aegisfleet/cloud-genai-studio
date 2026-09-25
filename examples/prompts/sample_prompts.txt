@@ -1,0 +1,10 @@
+# MiniMax H3 Sample Prompts
+
+# 1. Futuristic Cyberpunk City (T2V)
+A cinematic shot of a futuristic cyberpunk city at midnight, neon holographic billboards reflecting in wet asphalt, flying hover vehicles streaming through misty skyscrapers, deep atmospheric synth bass and rainy ambience, 8k resolution, photorealistic.
+
+# 2. Fantasy Dragon (T2V)
+A majestic obsidian dragon soaring through misty mountain peaks during a fiery crimson sunset, powerful wings beating the thin air, dramatic wind roars and thunder echoes, ultra-detailed textures, cinematic lighting.
+
+# 3. Nature & Wildlife (T2V)
+A playful baby red panda climbing a mossy pine branch in an ancient autumn forest, sunlight piercing through golden leaves, cheerful chirping of forest birds and soft rustling leaves, highly detailed 4k.

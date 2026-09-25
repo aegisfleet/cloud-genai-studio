@@ -21,10 +21,12 @@ param (
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-$ProjectRoot = (Resolve-Path "$PSScriptRoot\..").Path
-if (-not $LyricsFile) { $LyricsFile = "$ProjectRoot\examples\lyrics\lyrics_10deg.txt" }
-if (-not $AbcFile) { $AbcFile = "$ProjectRoot\examples\scores\10deg.abc" }
-if (-not $OutputDir) { $OutputDir = "$ProjectRoot\outputs" }
+$ModelRoot = (Resolve-Path "$PSScriptRoot\..").Path
+$RepoRoot = (Resolve-Path "$ModelRoot\..\..").Path
+
+if (-not $LyricsFile) { $LyricsFile = "$RepoRoot\examples\yue2\lyrics\lyrics_10deg.txt" }
+if (-not $AbcFile) { $AbcFile = "$RepoRoot\examples\yue2\scores\10deg.abc" }
+if (-not $OutputDir) { $OutputDir = "$RepoRoot\outputs" }
 
 Write-Host "=== 1. Checking / Creating Spot Instance ($InstanceName) ===" -ForegroundColor Cyan
 $existing = gcloud compute instances list --filter="name=$InstanceName AND zone:$Zone" --format="value(status)" 2>$null
@@ -84,13 +86,13 @@ Get-ChildItem -Path "$PSScriptRoot\*.sh" | ForEach-Object {
     [System.IO.File]::WriteAllText($_.FullName, $content, [System.Text.UTF8Encoding]::new($false))
 }
 
-$wheelPath = "$ProjectRoot\packages\yue2_infer-0.1.5-py3-none-any.whl"
-$reqPath = "$ProjectRoot\requirements.txt"
-$genPath = "$ProjectRoot\generate.py"
+$wheelPath = "$ModelRoot\packages\yue2_infer-0.1.5-py3-none-any.whl"
+$reqPath = "$RepoRoot\requirements.txt"
+$genPath = "$ModelRoot\generate.py"
 
 gcloud compute scp $reqPath $genPath $wheelPath "${InstanceName}:${remoteHome}/" --zone=$Zone
 gcloud compute scp --recurse "$PSScriptRoot\*.sh" "${InstanceName}:${remoteHome}/gcp/" --zone=$Zone
-gcloud compute scp --recurse "$ProjectRoot\examples\*" "${InstanceName}:${remoteHome}/examples/" --zone=$Zone
+gcloud compute scp --recurse "$RepoRoot\examples\yue2\*" "${InstanceName}:${remoteHome}/examples/" --zone=$Zone
 
 $lyricsLeaf = Split-Path $LyricsFile -Leaf
 $abcLeaf = Split-Path $AbcFile -Leaf

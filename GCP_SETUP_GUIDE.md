@@ -1,189 +1,82 @@
-# Google Cloud (NVIDIA L4 Spot) による YuE2 音楽生成 再現手順書
+# Google Cloud (NVIDIA L4 Spot) 環境構築・運用完全ガイド
 
-本書は、Google Cloud の Compute Engine 上に **NVIDIA L4 GPU (24GB VRAM)** を備えた **Spot インスタンス** を作成し、音楽生成モデル **YuE2 (YuE2-3B)** のセットアップから楽曲生成、生成成果物のローカル `outputs/` への取得、およびインスタンス管理までを再現するための完全な手順書である。
-
----
-
-## 1. 構成概要
-
-* **クラウドプロバイダ**: Google Cloud Platform (GCP)
-* **リージョン / ゾーン**: 東京 (`asia-northeast1-b`)
-* **インスタンス名**: `yue2-l4-spot`
-* **マシンタイプ**: `g2-standard-4` (4 vCPU, 16GB RAM, 1x NVIDIA L4 24GB VRAM)
-* **プロビジョニング**: `SPOT` (大幅に安価なプリエンプティブル料金体系)
-* **OSイメージ**: Deep Learning VM (`deeplearning-platform-release` / `pytorch-2-9-cu129-ubuntu-2204-nvidia-580`)
-* **成果物出力先**: ローカルの `outputs/`
+本ドキュメントは、Google Cloud Platform (GCP) 上で **NVIDIA L4 GPU (24GB VRAM)** の **Spot インスタンス** を立ち上げ、本リポジトリの生成AIモデル（YuE2, Wan2.2-S2V, MiniMax H3）を安全かつ圧倒的な低コストで実行するための共通セットアップ手順書である。
 
 ---
 
-## 2. 事前準備（クォータとCLI確認）
+## 💡 なぜ GCP Spot インスタンスなのか？
 
-PowerShell にて実行する。文字化け防止のため、セッション開始時にエンコーディングを設定する。
+最新の生成AIモデル（14B動画生成、3B音楽生成等）を実行するには **24GB以上のGPU VRAM** が必須である。
+通常、これをクラウドでオンデマンド常時起動すると高額なコストが発生する。
 
-```powershell
-[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
-```
+| インスタンスタイプ | GPU構成 | 通常オンデマンド料金 | **Spot インスタンス料金** | 割引率 |
+| :--- | :--- | :--- | :--- | :---: |
+| **`g2-standard-4`** (YuE2向け) | 1x L4 (24GB), 4 vCPU, 16GB RAM | 約 $0.80 / 時 (約120円) | **約 $0.35 / 時 (約50円)** | **約 60% OFF** |
+| **`g2-standard-8`** (動画モデル向け) | 1x L4 (24GB), 8 vCPU, 32GB RAM | 約 $1.00 / 時 (約150円) | **約 $0.45 / 時 (約70円)** | **約 55% OFF** |
 
-### 2.1 GCP プロジェクトの設定
-```powershell
-# 使用するプロジェクトを設定
-gcloud config set project cloud-execution-environment
-gcloud config set compute/region asia-northeast1
-gcloud config set compute/zone asia-northeast1-b
-```
-
-### 2.2 東京リージョンの L4 Spot クォータ確認
-```powershell
-gcloud compute regions describe asia-northeast1 --format="yaml(quotas)" | Select-String -Pattern "NVIDIA_L4" -Context 1,3
-```
-* `PREEMPTIBLE_NVIDIA_L4_GPUS` の `limit` が 1 以上、`usage` が 0 であることを確認する。
+本リポジトリのオーケストレーター（PowerShellスクリプト）は、**「生成開始時に起動 ➔ 生成完了後に即時自動停止」** を行うため、1曲（約2分生成）で約数円、5秒の高品質動画（約4〜6分生成）で約5〜10円程度しか発生しない。
 
 ---
 
-## 3. インスタンスの作成
+## 📋 前提条件と初期セットアップ
 
-### 3.1 Spot インスタンスの新規作成コマンド
-```powershell
-gcloud compute instances create yue2-l4-spot `
-    --zone=asia-northeast1-b `
-    --machine-type=g2-standard-4 `
-    --provisioning-model=SPOT `
-    --instance-termination-action=STOP `
-    --image-family=pytorch-2-9-cu129-ubuntu-2204-nvidia-580 `
-    --image-project=deeplearning-platform-release `
-    --boot-disk-size=100GB `
-    --boot-disk-type=pd-balanced `
-    --metadata="install-nvidia-driver=True"
-```
+### Step 1: Google Cloud SDK (`gcloud`) のインストール
+ローカルPC（Windows）に Google Cloud CLI をインストールする。
 
-### 3.2 起動確認と GPU 認識チェック
-インスタンス起動完了後（約 30 秒〜 1 分後）、SSH 経由で GPU を確認する。
-```powershell
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="nvidia-smi"
-```
-* `NVIDIA L4` (24GB VRAM) が表示されれば正常。
+* 公式インストーラー: [Google Cloud CLI Install](https://cloud.google.com/sdk/docs/install)
+* インストール後、PowerShellで初期設定を行う：
+  ```powershell
+  gcloud auth login
+  gcloud config set project YOUR_PROJECT_ID
+  ```
 
 ---
 
-## 4. 環境構築とファイル転送
+### Step 2: GPU クォータ（割り当て）の申請
+GCP で GPU インスタンスを起動するには、GPU クォータが割り当てられている必要がある（初期状態では 0 の場合が多い）。
 
-### 4.1 仮想メモリ（Swap 8GB）の設定
-16GB RAM 環境での突発的メモリスパイク（OOM）を確実に防止するため、8GB の Swap 領域を有効化する。
-```powershell
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="sudo fallocate -l 8G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=8192; sudo chmod 600 /swapfile; sudo mkswap /swapfile; sudo swapon /swapfile; free -h"
-```
-
-### 4.2 リモート側の作業ディレクトリ作成
-```powershell
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="mkdir -p ~/yue2/outputs ~/yue2/examples/lyrics ~/yue2/examples/scores ~/yue2/gcp"
-```
-
-### 4.3 ローカルファイルの転送 (SCP)
-ローカルのリポジトリルートから必要なファイルを転送する。
-```powershell
-# 依存定義、生成コード、Wheelパッケージ、シェルスクリプト、サンプルの転送
-gcloud compute scp requirements.txt generate.py packages/yue2_infer-0.1.5-py3-none-any.whl yue2-l4-spot:~/yue2/ --zone=asia-northeast1-b
-gcloud compute scp --recurse gcp/*.sh yue2-l4-spot:~/yue2/gcp/ --zone=asia-northeast1-b
-gcloud compute scp --recurse examples/* yue2-l4-spot:~/yue2/examples/ --zone=asia-northeast1-b
-```
-*(※ `~/yue2/` を指定することで、ログインユーザーのホームディレクトリ配下に自動配置される)*
-
-### 4.3 依存ライブラリのインストールと競合回避
-> [!IMPORTANT]
-> Deep Learning VM の初期状態に含まれる `torchvision` は PyTorch 2.9 / 2.10 と ABI 競合（`operator torchvision::nms does not exist`）を起こすため、事前にアンインストールする。YuE2 は音声生成モデルのため torchvision は不要。
-
-```powershell
-# torchvision アンインストールと依存パッケージの導入
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="sudo pip3 uninstall -y torchvision 2>/dev/null; pip3 uninstall -y torchvision 2>/dev/null; cd ~/yue2 && pip3 install yue2_infer-0.1.5-py3-none-any.whl && pip3 install -r requirements.txt"
-```
+1. [Google Cloud Console 割り当てページ](https://console.cloud.google.com/iam-admin/quotas) にアクセス。
+2. 以下のいずれかのクォータを検索し、**上限を 1 以上**（推奨: 1）へ引き上げ申請する：
+   * **`Compute Engine API / GPUS_ALL_REGIONS`**（全世界でのGPU総数クォータ。最も手軽）
+   * または **`NVIDIA L4 GPUs`**（東京リージョン `asia-northeast1`）
+3. 申請理由には「*Evaluating open-weight generative AI models (music and video generation) on Spot instances*」と記載する（通常数時間〜1営業日で承認される）。
 
 ---
 
-## 5. 楽曲生成の実行
+### Step 3: ディスク容量とスワップ（メモリ不足防止）
 
-### 5.1 NieR風楽曲（「遺サレタ場所」イメージ）を生成する場合
-歌詞ファイル `lyrics_nier_ruins.txt` とスタイルタグを指定して実行する。
-
-```powershell
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="bash ~/yue2/run_nier.sh"
-```
-
-**【シェルスクリプト `run_nier.sh` の内容】**
-```bash
-#!/bin/bash
-set -e
-cd ~/yue2
-
-python3 generate.py \
-  --style "ethereal female vocal, acoustic guitar arpeggio, melancholic piano, sweeping strings, desolate ruin, cinematic NieR Automata style, haunting emotional vocalise, ambient neoclassical, 84 bpm" \
-  --lyrics-file "lyrics_nier_ruins.txt" \
-  --cot "full" \
-  --seed 42 \
-  --output "outputs/nier_city_ruins.flac"
-```
-
-### 5.2 任意のスタイル・歌詞で生成する場合
-```powershell
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="cd ~/yue2 && python3 generate.py --style 'J-Pop, emotional female vocal, dynamic piano' --output 'outputs/my_song.flac'"
-```
+* **ディスクサイズ**:
+  * YuE2: **100GB**（pd-balanced 推奨）
+  * 動画モデル (Wan2.2, MiniMax H3): **150GB**（モデル重みが20〜35GBあるため）
+* **Swap メモリ**:
+  * メインメモリ16GB（`g2-standard-4`）の場合、モデルロード時に瞬間的なメモリスパイク（OOM Killer）が発生するリスクがある。
+  * 本リポジトリの起動スクリプトは、VM内で自動的に **8GB のスワップファイル (`/swapfile`)** を構成して OOM を回避する。
 
 ---
 
-## 6. 生成成果物の取得（ローカル `outputs/` へのダウンロード）
+## 🔒 課金防止と運用のベストプラクティス
 
-生成された FLAC 音源および ABC 楽譜ファイルをローカルの `outputs/` フォルダへ転送する。
-
-```powershell
-# ローカル outputs フォルダへダウンロード
-gcloud compute scp --recurse yue2-l4-spot:~/yue2/outputs/* outputs/ --zone=asia-northeast1-b
-```
-
-ダウンロード後の確認:
-```powershell
-Get-ChildItem outputs
-```
-
----
-
-## 7. インスタンス管理と課金停止（必須）
-
-Spot インスタンスは時間課金のため、作業終了後は速やかに停止または削除を行う。
-
-### 7.1 インスタンスの停止（再開可能・推奨）
-モデルファイル（約 10GB）やセットアップ環境を保持したまま、GPU 稼働課金を止める。
-```powershell
-gcloud compute instances stop yue2-l4-spot --zone=asia-northeast1-b
-```
-
-### 7.2 次回作業時の再開
-停止したインスタンスは以下のコマンドですぐに起動できる。モデルの再ダウンロードや環境構築は不要。
-```powershell
-# 起動
-gcloud compute instances start yue2-l4-spot --zone=asia-northeast1-b
-
-# 起動後の生成実行
-gcloud compute ssh yue2-l4-spot --zone=asia-northeast1-b --command="bash ~/yue2/run_nier.sh"
-```
-
-### 7.3 インスタンスの完全削除（不要になった場合）
-ブートディスクも含め完全にクリーンアップする場合に実行する。
-```powershell
-gcloud compute instances delete yue2-l4-spot --zone=asia-northeast1-b --quiet
-```
+1. **自動停止の徹底**:
+   * スクリプトはデフォルトで生成終了後に `gcloud compute instances stop` を発行する。
+   * 手動でインスタンスに入って作業した場合は、作業終了後に必ず停止コマンドを実行すること：
+     ```powershell
+     gcloud compute instances stop <INSTANCE_NAME> --zone=<ZONE>
+     ```
+2. **予算アラートの設定**:
+   * [GCP 課金アラート設定](https://console.cloud.google.com/billing/budgets) で、月額 1,000円〜3,000円の予算アラートを設定しておくことを強く推奨する。
+3. **ディスク課金の注意**:
+   * インスタンスを「停止（STOPPED）」している間は GPU や CPU の料金は一切発生しないが、ディスク領域（100GB〜150GBで月額約 1,000〜1,500円程度）の保管料のみ日割りで微小に発生する。
+   * 長期間利用しない場合は、インスタンスを削除すれば完全無料となる：
+     ```powershell
+     gcloud compute instances delete <INSTANCE_NAME> --zone=<ZONE>
+     ```
 
 ---
 
-## 8. 自動化スクリプトによる一括実行
+## 🚀 モデル別実行方法
 
-起動からファイル取得、停止までを自動で行う PowerShell スクリプトを用意している。
+準備が整ったら、各モデルのディレクトリ配下の PowerShell スクリプトを実行するだけでクラウド生成が可能となる。
 
-```powershell
-# デフォルト（起動 -> 生成 -> outputs/ にダウンロード -> インスタンス自動停止）
-.\gcp\run_cloud_generation.ps1
-
-# 任意のスタイルを指定して実行
-.\gcp\run_cloud_generation.ps1 -Style "cyberpunk synthwave, aggressive bass, 130 bpm"
-
-# 生成後もインスタンスを停止せず維持する場合
-.\gcp\run_cloud_generation.ps1 -KeepRunning
-```
+* 🎵 **YuE2 (音楽)**: [models/yue2/README.md](file:///D:/Work/YuE2/models/yue2/README.md)
+* 🗣️ **Wan2.2-S2V (音声駆動動画)**: [models/wan2_2_s2v/README.md](file:///D:/Work/YuE2/models/wan2_2_s2v/README.md)
+* 🎥 **MiniMax H3 (超高品質動画)**: [models/minimax_h3/README.md](file:///D:/Work/YuE2/models/minimax_h3/README.md)

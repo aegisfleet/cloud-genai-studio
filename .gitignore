@@ -17,9 +17,20 @@ outputs/*
 *.mp3
 *.mp4
 *.ogg
+!examples/**
+
+# Model Weights & Checkpoints (large files)
+*.safetensors
+*.pt
+*.ckpt
+*.bin
+
+# Environment & Credentials
+.env
+.env.local
 
 # Temporary generated scripts
-gcp/run_cloud_job.sh
+**/run_cloud_job.sh
 
 # OS specific files
 .DS_Store
