@@ -29,6 +29,7 @@
 | **YuE2-3B** | 🎵 音楽生成 | • ABC楽譜プロンプトによる既存曲アレンジ・耳コピ<br>• 歌詞改行と休符の一致による高精度歌唱<br>• CUDA Graph / 24GB VRAMフル活用 | 約 1分半 〜 2分 / 曲 (2〜3分尺) | [YuE2 ガイド](file:///D:/Work/YuE2/models/yue2/README.md) |
 | **Wan2.2-S2V** | 🗣️ 音声駆動動画 | • 14B Scaled FP8 による高精度リップシンク<br>• 先頭4フレームスキップによるディレイ解消<br>• 77f単位マルチチャンクによる15秒超の長尺生成 | 約 4分 15秒 / 5秒動画 (640x640) | [Wan2.2 ガイド](file:///D:/Work/YuE2/models/wan2_2_s2v/README.md) |
 | **MiniMax H3** | 🎥 超高品質動画 | • Ref2VA (Reference to Video+Audio) 準拠<br>• 歯並び・表情破綻ゼロの最高峰リアリズム<br>• DiT INT8 + Qwen3VL NVFP4 量子化 | 約 6分 30秒 / 5秒動画 (640x640) | [MiniMax H3 ガイド](file:///D:/Work/YuE2/models/minimax_h3/README.md) |
+| **Qwen-Image 2.1** | 🎨 画像生成 (1K/2K) | • 7B DiT / 統合 Text-to-Image & 画像編集<br>• 2K (2048x2048) 超高解像度・RGBA透過出力対応<br>• CPUオフロードにより 16GB RAM / L4 で動作 | 約 62秒 (1K) / 約 4分13秒 (2K) | [Qwen-Image ガイド](file:///D:/Work/YuE2/models/qwen_image_2_1/README.md) |
 
 ---
 
@@ -131,6 +132,19 @@ cloud-genai-studio/
 
 ---
 
+### 4. 🎨 Qwen-Image 2.1 による 1K / 2K 画像生成
+最新の 7B DiT 基盤モデルを用い、高精細な 1K（1024×1024）および 2K（2048×2048）画像を高速生成する。
+
+```powershell
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+.\models\qwen_image_2_1\gcp\run_cloud.ps1 `
+    -Prompt "A hyper-detailed cinematic portrait of a cyberpunk girl in neo-tokyo with neon lights and rain reflections, 8k resolution, masterpiece" `
+    -Width 1024 -Height 1024 -Steps 20 `
+    -OutputFilename "qwen_cyberpunk_1k.png"
+```
+
+---
+
 ## 🛠️ 共通ポストプロダクションツール (`tools/`)
 
 生成された音声や動画をさらにブラッシュアップするためのツール群を備えている。
@@ -167,6 +181,7 @@ python tools/edit_for_twitter.py --input outputs/10deg_rock.flac --duration 120 
 - [YuE2 音楽生成 詳細ノウハウ](file:///D:/Work/YuE2/models/yue2/README.md)
 - [Wan2.2-S2V 音声駆動動画 詳細ノウハウ](file:///D:/Work/YuE2/models/wan2_2_s2v/README.md)
 - [MiniMax H3 超高品質動画 詳細ノウハウ](file:///D:/Work/YuE2/models/minimax_h3/README.md)
+- [Qwen-Image 2.1 画像生成＆2K実機検証ガイド](file:///D:/Work/YuE2/models/qwen_image_2_1/README.md)
 
 ---
 
