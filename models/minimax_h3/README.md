@@ -32,53 +32,73 @@ MiniMax H3 (Hailuo 02/03 アーキテクチャ) を用いて、静止画と音�
 
 ## 3. ディレクトリ構成
 
-- `generate.py`: ComfyUI REST API と連携する MiniMax H3 Ref2VA 生成 CLI（プロンプトタグ自動整形、任意音声対応）
-- `gcp/setup.sh`: ComfyUI および MiniMax H3 量子化モデル（約35GB）の高速自動セットアップ
+- `generate.py`: ComfyUI REST API と連携する MiniMax H3 Ref2VA 生成 CLI（複数画像リファレンス、プロンプトタグ自動整形、任意音声対応）
+- `gcp/run_cloud.py`: **（推奨）** OS 非依存のネイティブ Python クラウドオーケストレータ（複数参照・画像リストファイル対応、自動起動・回収・停止）
+- `gcp/run_cloud.ps1`: Windows PowerShell 版クラウド実行スクリプト
 - `gcp/run_remote.sh`: VM 上での生成実行ラッパー（ComfyUI 応答待機ループ内蔵）
-- `gcp/run_cloud.ps1`: ローカルから一発でインスタンス起動・生成・回収・停止を行うオーケストレータ
+- `gcp/setup.sh`: ComfyUI および MiniMax H3 量子化モデル（約35GB）の高速自動セットアップ
 
 ---
 
-## 4. プロンプト記法 (Ref2VA)
+## 4. プロンプト記法と高品質化ノウハウ (Ref2VA)
 
-MiniMax H3 の `MiniMaxH3ReferenceToVideo` ノードでは、入力リファレンスをプロンプト内で明示的にタグ付けしてバインドする：
-- 画像: `<Picture 1>`
-- 音声: `<Audio 1>` (オプション、指定なしの場合は効果音・BGMを自律生成)
-- 動画: `<Video 1>`
+### 複数リファレンス（Multi-Reference）による視点・カット割り改善
+単一の全身立ち絵のみを入力すると、背面やアングル変化の情報を補間しきれず、**被写体がその場で360度ぐるぐる回転するような縮退モーション**になりやすい。
 
-※ 本リポジトリの `generate.py` では、SNS や Web UI で普及している **`@[character ref]` などのメンション記法を自動検出し、内部で `<Picture 1>` へバインド**する。タグが省略されている場合も自動で先頭に `<Picture 1>` を付与する。
+**推奨手法**:
+全身立ち絵（`<Picture 1>`）に加えて、Gemini（Imagen 3）等で生成した主要パーツ画像を複数用意し、プロンプト内の各ショットに対応付ける：
+- `<Picture 1>`: メイン全身立ち絵
+- `<Picture 2>`: 足元・ハイヒールブーツ（ローアングル・ステップ）
+- `<Picture 3>`: 手元・刀の柄や鍔（抜刀・アクション）
+- `<Picture 4>`: 横顔・獣耳・鋭い眼光（クローズアップ・表情）
 
-**プロンプト例（SNS キャラクター公開カットイン演出）**:
+プロンプト内では各ショットに対応するタグを記述する：
 ```text
-Create a fast, striking character reveal using @[character ref]. Preserve identity, proportions, outfit and original rendering style...
-Use exactly 10 fast-cut shots progressing upward: feet, lower legs, knees/thighs, hips/waist, hand beside torso...
-Sync editing, contour animation and graphic accents to character-appropriate music and precise sound details.
+Shot 1: Tight low-angle close-up of feet and lower legs <Picture 2>...
+Shot 5: Rapid tracking shot of hand drawing sword hilt <Picture 3>...
+Shot 8: Intense profile close-up on eyes and face <Picture 4>...
+Shot 10: First full head-to-toe hero reveal <Picture 1>...
 ```
+
+### 音響（Audio）品質と効果音（SFX）特化のベストプラクティス
+- **サンプラーとステップ数**: 4-step Turbo + `res_multistep` は映像生成には高速だが、Audio VAE の潜在空間が収束せずホワイトノイズや音割れを起こしやすい。**`euler` サンプラー + 8 steps** を推奨する。
+- **BGM を排除し効果音のみを生成する場合**: プロンプト冒頭で `NO background music, NO melody` と明示的に禁止し、各カットに具体的な物理音（金属の抜刀音、電撃スパーク音、ヒールの足音、風切り音など）を指定する。
 
 ---
 
 ## 5. 実行方法
 
-### ローカル PowerShell からクラウド一発実行 (`run_cloud.ps1`)
+### クラウド一発実行 (Python オーケストレータ `run_cloud.py` 推奨)
 
-**15秒キャラクター動画生成 (640x640 / 360 frames)**:
-```powershell
-.\models\minimax_h3\gcp\run_cloud.ps1 `
-    -Image "examples/images/hoshimi_miyabi.png" `
-    -PromptFile "examples/prompts/miyabi_reveal.txt" `
-    -Width 640 -Height 640 -Length 360
+複数画像参照リスト（`examples/images/miyabi_reveal_images.txt`）を用いた 15秒動画生成：
+```bash
+python models/minimax_h3/gcp/run_cloud.py \
+    --image_file examples/images/miyabi_reveal_images.txt \
+    --prompt_file examples/prompts/miyabi_reveal_sfx_multi.txt \
+    --steps 8 \
+    --sampler euler \
+    --length 360
 ```
 ※ 完了後、成果物は `outputs/` に自動ダウンロードされ、インスタンスは自動で停止（TERMINATED）する。
+
+PowerShell から実行する場合は `run_cloud.ps1` も利用可能：
+```powershell
+.\models\minimax_h3\gcp\run_cloud.ps1 `
+    -ImageFile "examples/images/miyabi_reveal_images.txt" `
+    -PromptFile "examples/prompts/miyabi_reveal_sfx_multi.txt" `
+    -Steps 8 -Sampler "euler" -Length 360
+```
 
 ### VM 内での直接実行 (`generate.py`)
 ```bash
 python3 minimax_h3/generate.py \
-    --image /path/to/character.png \
+    --images /path/to/img1.png /path/to/img2.png \
     --prompt_file /path/to/prompt.txt \
     --width 640 \
     --height 640 \
     --length 360 \
-    --steps 4 \
+    --steps 8 \
+    --sampler euler \
     --output_dir ./outputs
 ```
 
@@ -86,12 +106,12 @@ python3 minimax_h3/generate.py \
 
 ## 6. 実測ベンチマーク (NVIDIA L4 24GB VRAM / 640x640)
 
-- **短尺テスト (124 frames / 約5.17秒)**: 全体所要時間 **約 6 分 30 秒**
-- **フル 15秒 (360 frames / 24fps)**: 全体所要時間 **約 10 〜 12 分**
-  - Qwen3VL エンコード: 約 30 秒
-  - DiT ロード & LoRA 適用: 約 30 秒
-  - サンプリング (4 steps Turbo): 約 7 〜 8 分
-  - Video & Audio VAE デコード: 約 2 〜 3 分
+- **高速 4-step Turbo (360 frames / 15秒)**: 所要時間 **約 10 〜 12 分**
+- **高品質 8-step Euler (360 frames / 15秒)**: 所要時間 **約 26 分**
+  - Qwen3VL + DiT 初期化: 約 3 分 20 秒
+  - サンプリング (8 steps): 約 21 分 10 秒（1ステップあたり約 155〜160 秒）
+  - Video & Audio VAE デコード: 約 1 〜 2 分
+  - VRAM 使用量: ピーク約 22.3 GB / 23.0 GB（L4 の容量内で安定稼働）
 - **品質所見**:
-  - 静止画から10カット以上の高速カメラワーク・カット割り・身体追従エフェクトラインを滑らかに補間生成。
-  - キャラクターのプロポーションと服飾ディテールを極めて高い精度で維持。
+  - 4枚のマルチアングル参照画像と 8-step Euler により、被写体回転の縮退が解消され、10カットの明確なアングル遷移と精緻な SFX（抜刀・風切り音）の同期が達成される。
+
