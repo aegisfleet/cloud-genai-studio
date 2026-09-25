@@ -8,6 +8,7 @@ venv/
 *.egg-info/
 dist/
 build/
+node_modules/
 
 # Audio / Video Outputs (prevent pushing large files)
 outputs/*

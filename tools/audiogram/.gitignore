@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.remotion/
+public/*
+!public/.gitkeep
+props_temp.json
+preview_props.json

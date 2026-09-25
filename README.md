@@ -187,6 +187,29 @@ X (旧Twitter) 向けに、音源の2分フェードアウトおよびファイ�
 python tools/edit_for_twitter.py --input outputs/10deg_rock.flac --duration 120 --fade 5
 ```
 
+### 5. 🎬 Remotion による高品質オーディオグラム動画生成 (`tools/create_audiogram.py`)
+合成音声や楽曲から、リアルタイム波形アニメーション・字幕・話者カード・シークバー付きのSNS向け動画（MP4）を自動生成する。
+グラスモーフィズムデザインとネオングロー波形を備え、1:1（X/Insta）、9:16（TikTok/Shorts）、16:9（YouTube）の各アスペクト比に対応している。
+```powershell
+# X/Instagram用 正方形動画 (1080x1080)
+python tools/create_audiogram.py `
+    --audio outputs/anna_1_happy_fast.wav `
+    --speaker "Ono Anna (小野 アンナ)" `
+    --role "嬉しい感情 / 早口指定" `
+    --text "わぁ、本当に嬉しい！こんなに素敵なプレゼントをもらえるなんて夢みたい！" `
+    --tag "EMOTION: HAPPY" `
+    --format square
+
+# TikTok/Shorts用 縦型動画 (1080x1920)
+python tools/create_audiogram.py `
+    --audio outputs/anna_1_happy_fast.wav `
+    --speaker "Ono Anna (小野 アンナ)" `
+    --role "嬉しい感情 / 早口指定" `
+    --text "わぁ、本当に嬉しい！こんなに素敵なプレゼントをもらえるなんて夢みたい！" `
+    --tag "EMOTION: HAPPY" `
+    --format vertical
+```
+
 ---
 
 ## 📚 ドキュメント一覧
