@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """MiniMax H3 CLI: Reference-to-Video+Audio (Ref2VA), Image-to-Video, Text-to-Video
 
-ComfyUI REST API を経由して MiniMax H3 (DiT int8 convrot + Qwen3VL nvfp4 + 4-step Turbo LoRA)
-による高品質な動画（音声同期）を生成する。
+ComfyUI REST API を経由して MiniMax H3 (DiT int8 convrot + Qwen3VL nvfp4 + Turbo LoRA)
+による高品質な動画（音声同期）を生成する。複数画像リファレンス対応。
 """
 
 import argparse
@@ -69,35 +69,28 @@ def upload_file(server_url: str, file_path: str, subfolder: str = "") -> str:
 def format_prompt(prompt_text: str) -> str:
     """SNS/Director用の @[character ref] 記法などを ComfyUI MiniMaxH3 の <Picture 1> 記法に変換する。"""
     cleaned = prompt_text
-    # @[character ref], @[character], @[image] などのタグを <Picture 1> に置換
     cleaned = re.sub(r"@\[(?:character(?:\s*ref)?|image|pic)\]", "<Picture 1>", cleaned, flags=re.IGNORECASE)
-    
-    # もし <Picture 1> が含まれていない場合、先頭に付与
-    if "<Picture 1>" not in cleaned:
+    if "<Picture" not in cleaned:
         cleaned = f"<Picture 1> {cleaned}"
-    
     return cleaned.strip()
 
 
 def build_ref2va_workflow(
-    image_name: str,
+    image_names: list[str],
     audio_name: str = "",
     prompt_text: str = "",
     width: int = 640,
     height: int = 640,
     length: int = 360,
-    steps: int = 4,
+    steps: int = 8,
+    sampler_name: str = "euler",
     seed: int = 42,
     output_prefix: str = "video/MiniMax_H3_Ref2VA",
 ) -> dict:
-    """MiniMax H3 ReferenceToVideo ワークフローを構築する。"""
+    """MiniMax H3 ReferenceToVideo ワークフローを構築する（複数画像リファレンス対応）。"""
     formatted_prompt = format_prompt(prompt_text)
 
     workflow = {
-        "1": {
-            "inputs": {"image": image_name},
-            "class_type": "LoadImage",
-        },
         "3": {
             "inputs": {
                 "unet_name": "minimax_h3_ref2va_pruned_int8_convrot.safetensors",
@@ -138,7 +131,6 @@ def build_ref2va_workflow(
                 "height": int(height),
                 "length": int(length),
                 "ref_image_size": "match",
-                "ref_images.ref_image_0": ["1", 0],
             },
             "class_type": "MiniMaxH3ReferenceToVideo",
         },
@@ -150,7 +142,7 @@ def build_ref2va_workflow(
             "class_type": "BasicGuider",
         },
         "10": {
-            "inputs": {"sampler_name": "res_multistep"},
+            "inputs": {"sampler_name": sampler_name},
             "class_type": "KSamplerSelect",
         },
         "11": {
@@ -207,6 +199,15 @@ def build_ref2va_workflow(
             "class_type": "SaveVideo",
         },
     }
+
+    # 各画像スロット（<Picture 1>, <Picture 2>, ...）を動的に生成
+    for idx, img_name in enumerate(image_names):
+        node_id = str(20 + idx)
+        workflow[node_id] = {
+            "inputs": {"image": img_name},
+            "class_type": "LoadImage",
+        }
+        workflow["8"]["inputs"][f"ref_images.ref_image_{idx}"] = [node_id, 0]
 
     # 音声入力が提供されている場合は LoadAudio を追加してバインド
     if audio_name:
@@ -285,23 +286,36 @@ def download_video(server_url: str, outputs: dict, output_dir: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="MiniMax H3 CLI")
-    parser.add_argument("--image", type=str, required=True, help="Input character image (PNG/WEBP/JPG)")
+    parser.add_argument("--image", type=str, default="", help="Input primary character image or comma-separated images")
+    parser.add_argument("--images", nargs="+", default=[], help="List of reference images (<Picture 1>, <Picture 2>, ...)")
     parser.add_argument("--audio", type=str, default="", help="Optional input speech or reference audio (MP3/WAV)")
     parser.add_argument(
         "--prompt",
         type=str,
         default="",
-        help="Prompt text containing @[character ref] or <Picture 1>",
+        help="Prompt text containing <Picture 1>, <Picture 2>, etc.",
     )
     parser.add_argument("--prompt_file", type=str, default="", help="Path to text file containing prompt")
     parser.add_argument("--width", type=int, default=640, help="Video width (default: 640)")
     parser.add_argument("--height", type=int, default=640, help="Video height (default: 640)")
-    parser.add_argument("--length", type=int, default=360, help="Frames count at 24fps (360 = 15s, 124 = ~5.1s)")
-    parser.add_argument("--steps", type=int, default=4, help="Sampling steps (default: 4)")
+    parser.add_argument("--length", type=int, default=360, help="Frames count at 24fps (360 = 15s)")
+    parser.add_argument("--steps", type=int, default=8, help="Sampling steps (default: 8 for better audio/motion)")
+    parser.add_argument("--sampler", type=str, default="euler", help="Sampler name (default: euler, less audio noise)")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--server_url", type=str, default="http://127.0.0.1:8188", help="ComfyUI server URL")
     parser.add_argument("--output_dir", type=str, default="./outputs", help="Directory to save generated video")
     args = parser.parse_args()
+
+    # 画像リストの結合・解析
+    raw_images = []
+    if args.images:
+        raw_images.extend(args.images)
+    if args.image:
+        raw_images.extend([x.strip() for x in args.image.split(",") if x.strip()])
+
+    if not raw_images:
+        print("[Error] No input images specified via --image or --images.")
+        sys.exit(1)
 
     prompt_text = args.prompt
     if args.prompt_file and os.path.exists(args.prompt_file):
@@ -312,18 +326,26 @@ def main():
         prompt_text = "<Picture 1> A fast, striking character reveal."
 
     print("=== MiniMax H3 Reference-to-Video+Audio CLI ===")
-    print(f"Image: {args.image}")
+    print(f"Reference Images ({len(raw_images)} items):")
+    for i, p in enumerate(raw_images):
+        print(f"  <Picture {i+1}>: {p}")
     if args.audio:
         print(f"Audio: {args.audio}")
     else:
-        print("Audio: (None - Model will synthesize audio/BGM natively)")
+        print("Audio: (None - Native SFX/Sound Synthesis)")
+    print(f"Resolution: {args.width}x{args.height}, Length: {args.length} frames ({args.length/24.0:.1f}s)")
+    print(f"Sampling: {args.steps} steps with '{args.sampler}' sampler (Seed: {args.seed})")
+
     # 1. Wait for ComfyUI and Upload assets
     if not wait_for_server(args.server_url, timeout=120):
         print(f"[Error] Could not reach ComfyUI server at {args.server_url}")
         sys.exit(1)
 
-    print("[1/3] Uploading input image to ComfyUI...")
-    uploaded_image = upload_file(args.server_url, args.image)
+    uploaded_images = []
+    for i, img_path in enumerate(raw_images):
+        print(f"[1/3] Uploading reference image {i+1}/{len(raw_images)}: {img_path} ...")
+        uploaded_images.append(upload_file(args.server_url, img_path))
+
     uploaded_audio = ""
     if args.audio and os.path.exists(args.audio):
         print("[1/3] Uploading input audio to ComfyUI...")
@@ -332,13 +354,14 @@ def main():
     # 2. Build and submit workflow
     print("[2/3] Submitting workflow...")
     workflow = build_ref2va_workflow(
-        image_name=uploaded_image,
+        image_names=uploaded_images,
         audio_name=uploaded_audio,
         prompt_text=prompt_text,
         width=args.width,
         height=args.height,
         length=args.length,
         steps=args.steps,
+        sampler_name=args.sampler,
         seed=args.seed,
     )
 

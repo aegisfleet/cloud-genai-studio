@@ -1,5 +1,5 @@
 # MiniMax H3 Google Cloud L4 Spot Generation Script
-# Usage: .\run_cloud.ps1 [-Image path] [-Prompt "text" | -PromptFile path] [-Length 360] [-KeepRunning]
+# Usage: .\run_cloud.ps1 [-Images @("img1", "img2")] [-PromptFile path] [-Length 360] [-Steps 8] [-KeepRunning]
 
 param (
     [string]$InstanceName = "minimax-h3-l4-spot",
@@ -8,13 +8,18 @@ param (
     [string]$BootDiskSize = "150GB",
     [string]$ImageFamily = "pytorch-2-9-cu129-ubuntu-2204-nvidia-580",
     [string]$ImageProject = "deeplearning-platform-release",
-    [string]$Image = "examples/images/hoshimi_miyabi.png",
+    [string]$Image = "",
+    [string]$ImageList = "",
+    [string]$ImageFile = "",
+    [string[]]$Images = @(),
     [string]$Audio = "",
     [string]$Prompt = "",
     [string]$PromptFile = "",
     [int]$Width = 640,
     [int]$Height = 640,
     [int]$Length = 360,
+    [int]$Steps = 8,
+    [string]$Sampler = "euler",
     [switch]$KeepRunning,
     [switch]$SetupOnly
 )
@@ -36,13 +41,60 @@ if (Test-Path $EnvFile) {
     }
 }
 
+# 画像リストの整備
+$AllImages = New-Object 'System.Collections.Generic.List[string]'
+
+if ($ImageFile) {
+    $resolvedImgFile = if ([System.IO.Path]::IsPathRooted($ImageFile)) { $ImageFile } else { Join-Path $RepoRoot $ImageFile }
+    if (Test-Path $resolvedImgFile) {
+        $lines = [System.IO.File]::ReadAllLines($resolvedImgFile)
+        foreach ($line in $lines) {
+            $trimmed = $line.Trim()
+            if ($trimmed -and -not $trimmed.StartsWith("#")) {
+                $AllImages.Add($trimmed)
+            }
+        }
+    }
+}
+
+if ($Images -and $Images.Length -gt 0) {
+    foreach ($img in $Images) {
+        if ($img) {
+            foreach ($sub in ($img -split '[,;]')) {
+                $trimmed = $sub.Trim()
+                if ($trimmed) { $AllImages.Add($trimmed) }
+            }
+        }
+    }
+}
+
+if ($ImageList) {
+    foreach ($item in ($ImageList -split '[,;]')) {
+        $trimmed = $item.Trim()
+        if ($trimmed) { $AllImages.Add($trimmed) }
+    }
+}
+
+if ($Image -and $Image.Trim()) {
+    $AllImages.Add($Image.Trim())
+}
+
+if ($AllImages.Count -eq 0) {
+    $AllImages.Add("examples/images/hoshimi_miyabi.png")
+}
+
+
 Write-Host "==========================================================" -ForegroundColor Green
-Write-Host " MiniMax H3 Cloud Generation Studio (NVIDIA L4 Spot)      " -ForegroundColor Green
+Write-Host " MiniMax H3 Multi-Reference Studio (NVIDIA L4 Spot)       " -ForegroundColor Green
 Write-Host "==========================================================" -ForegroundColor Green
 Write-Host "Instance   : $InstanceName (Zone: $Zone, Type: $MachineType)"
 Write-Host "Resolution : ${Width}x${Height}, Length: $Length frames ($([math]::Round($Length / 24, 1))s)"
-Write-Host "Image      : $Image"
-if ($Audio) { Write-Host "Audio      : $Audio" } else { Write-Host "Audio      : (None - Native Audio Synthesis)" }
+Write-Host "Sampling   : $Steps steps ($Sampler sampler)"
+Write-Host "Images ($($AllImages.Count) references):"
+for ($i = 0; $i -lt $AllImages.Count; $i++) {
+    Write-Host "  <Picture $($i+1)>: $($AllImages[$i])"
+}
+if ($Audio) { Write-Host "Audio      : $Audio" } else { Write-Host "Audio      : (None - Native SFX/Sound Synthesis)" }
 Write-Host "==========================================================" -ForegroundColor Green
 
 # 1. Check or Create Instance
@@ -113,14 +165,12 @@ $setupCmd = 'F1=/home/' + $remoteUser + '/ComfyUI/models/diffusion_models/minima
 $setupCheck = gcloud compute ssh $InstanceName --zone=$Zone --command="$setupCmd" 2>$null
 
 if ($setupCheck -notmatch "READY" -or $needsSetup) {
-    Write-Host "Setting up ComfyUI and downloading MiniMax H3 models on VM..." -ForegroundColor Yellow
+    Write-Host "Setting up ComfyUI and models on VM..." -ForegroundColor Yellow
     $LocalSetupSh = Join-Path $PSScriptRoot "setup.sh"
     gcloud compute scp $LocalSetupSh "${InstanceName}:/home/${remoteUser}/setup.sh" --zone=$Zone
     gcloud compute ssh $InstanceName --zone=$Zone --command="chmod +x /home/${remoteUser}/setup.sh; /home/${remoteUser}/setup.sh"
 } else {
     Write-Host "MiniMax H3 environment is already verified and ready." -ForegroundColor Green
-    # Ensure ComfyUI is running
-    gcloud compute ssh $InstanceName --zone=$Zone --command="curl -s http://127.0.0.1:8188/system_stats >/dev/null || nohup python3 /home/${remoteUser}/ComfyUI/main.py --listen 127.0.0.1 --port 8188 > /home/${remoteUser}/comfyui.log 2>&1 &"
 }
 
 if ($SetupOnly) {
@@ -129,22 +179,28 @@ if ($SetupOnly) {
 }
 
 # 4. Sync Files
-Write-Host "`n=== 4. Syncing Scripts and Input Assets ===" -ForegroundColor Cyan
+Write-Host "`n=== 4. Syncing Scripts and Reference Images ===" -ForegroundColor Cyan
 $LocalGen = Join-Path $ModelRoot "generate.py"
 $LocalRemoteSh = Join-Path $PSScriptRoot "run_remote.sh"
-$LocalImage = if ([System.IO.Path]::IsPathRooted($Image)) { $Image } else { Join-Path $RepoRoot $Image }
 
 gcloud compute scp $LocalGen "${InstanceName}:${remoteHome}/generate.py" --zone=$Zone
 gcloud compute scp $LocalRemoteSh "${InstanceName}:${remoteHome}/run_remote.sh" --zone=$Zone
-gcloud compute scp $LocalImage "${InstanceName}:${remoteHome}/$(Split-Path $LocalImage -Leaf)" --zone=$Zone
 
-$RemoteAud = ""
-if ($Audio) {
-    $LocalAudio = if ([System.IO.Path]::IsPathRooted($Audio)) { $Audio } else { Join-Path $RepoRoot $Audio }
-    if (Test-Path $LocalAudio) {
-        gcloud compute scp $LocalAudio "${InstanceName}:${remoteHome}/$(Split-Path $LocalAudio -Leaf)" --zone=$Zone
-        $RemoteAud = "${remoteHome}/$(Split-Path $LocalAudio -Leaf)"
+$RemoteImgArgs = New-Object 'System.Collections.Generic.List[string]'
+foreach ($imgPath in $AllImages) {
+    $resolvedPath = if ([System.IO.Path]::IsPathRooted($imgPath)) { $imgPath } else { Join-Path $RepoRoot $imgPath }
+    if (Test-Path $resolvedPath) {
+        $leaf = Split-Path $resolvedPath -Leaf
+        Write-Host "Uploading reference: $leaf ..."
+        gcloud compute scp $resolvedPath "${InstanceName}:${remoteHome}/${leaf}" --zone=$Zone
+        $RemoteImgArgs.Add("${remoteHome}/${leaf}")
+    } else {
+        Write-Warning "File not found: $resolvedPath"
     }
+}
+if ($RemoteImgArgs.Count -eq 0) {
+    Write-Error "No valid reference images were uploaded."
+    exit 1
 }
 
 # Sync prompt file
@@ -159,10 +215,8 @@ if ($PromptFile -and (Test-Path $PromptFile)) {
 
 # 5. Execute Generation
 Write-Host "`n=== 5. Running MiniMax H3 Generation on VM ===" -ForegroundColor Cyan
-$RemoteImg = "${remoteHome}/$(Split-Path $LocalImage -Leaf)"
-$RemotePromptFile = "${remoteHome}/prompt.txt"
-
-$Cmd = "chmod +x ${remoteHome}/run_remote.sh; ${remoteHome}/run_remote.sh '$RemoteImg' '$RemoteAud' '' '$RemotePromptFile' $Width $Height $Length"
+$ImagesArgString = ($RemoteImgArgs -join ' ')
+$Cmd = "chmod +x ${remoteHome}/run_remote.sh; ${remoteHome}/run_remote.sh --images $ImagesArgString --prompt_file ${remoteHome}/prompt.txt --width $Width --height $Height --length $Length --steps $Steps --sampler $Sampler"
 gcloud compute ssh $InstanceName --zone=$Zone --command=$Cmd
 
 # 6. Download Outputs

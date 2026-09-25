@@ -32,29 +32,9 @@ if [ "$READY" != "true" ]; then
     exit 1
 fi
 
-IMAGE="${1:-$WORKDIR/sample_portrait.jpg}"
-AUDIO="${2:-}"
-PROMPT="${3:-}"
-PROMPT_FILE="${4:-$WORKDIR/prompt.txt}"
-WIDTH="${5:-640}"
-HEIGHT="${6:-640}"
-LENGTH="${7:-360}"
-
-ARGS=(--image "$IMAGE" --width "$WIDTH" --height "$HEIGHT" --length "$LENGTH" --steps 4 --seed 42 --output_dir "$WORKDIR/outputs")
-
-if [ -n "$AUDIO" ] && [ -f "$AUDIO" ]; then
-    ARGS+=(--audio "$AUDIO")
-fi
-
-if [ -f "$PROMPT_FILE" ]; then
-    ARGS+=(--prompt_file "$PROMPT_FILE")
-elif [ -n "$PROMPT" ]; then
-    ARGS+=(--prompt "$PROMPT")
-fi
-
 echo "=== Running MiniMax H3 Generation ==="
-echo "Arguments: ${ARGS[@]}"
-python3 "$WORKDIR/generate.py" "${ARGS[@]}"
+echo "Arguments: $@"
+python3 "$WORKDIR/generate.py" "$@"
 
 echo "=== Generation Finished ==="
 ls -lh "$WORKDIR/outputs/"

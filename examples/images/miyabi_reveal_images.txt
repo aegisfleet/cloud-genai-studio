@@ -1,0 +1,4 @@
+examples/images/hoshimi_miyabi.png
+examples/images/gemini_boots_legs.png
+examples/images/gemini_hand_sword.png
+examples/images/gemini_profile_face.png
