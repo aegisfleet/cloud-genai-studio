@@ -30,6 +30,7 @@
 | **Wan2.2-S2V** | 🗣️ 音声駆動動画 | • 14B Scaled FP8 による高精度リップシンク<br>• 先頭4フレームスキップによるディレイ解消<br>• 77f単位マルチチャンクによる15秒超の長尺生成 | 約 4分 15秒 / 5秒動画 (640x640) | [Wan2.2 ガイド](file:///D:/Work/YuE2/models/wan2_2_s2v/README.md) |
 | **MiniMax H3** | 🎥 超高品質動画 | • Ref2VA (Reference to Video+Audio) 準拠<br>• 歯並び・表情破綻ゼロの最高峰リアリズム<br>• DiT INT8 + Qwen3VL NVFP4 量子化 | 約 6分 30秒 / 5秒動画 (640x640) | [MiniMax H3 ガイド](file:///D:/Work/YuE2/models/minimax_h3/README.md) |
 | **Qwen-Image 2.1** | 🎨 画像生成 (1K/2K) | • 7B DiT / 統合 Text-to-Image & 画像編集<br>• 2K (2048x2048) ネイティブ生成 & 超解像対応<br>• ホラー・戦闘の無検閲生成 & 連続バッチ生成対応 | 約 1分50秒 (1Kバッチ) / 約 8分17秒 (2K NF4) | [Qwen-Image ガイド](file:///D:/Work/YuE2/models/qwen_image_2_1/README.md) |
+| **Qwen3-TTS** | 🎙️ 音声合成 (TTS) | • 1.7B 12Hz コーデックによる高品質多言語音声合成<br>• 文末三点リーダー＆無音パディングによる余韻確保<br>• プリセット話者（`ono_anna`, `serena`等）による自然な日本語 | 約 20〜25秒 / 10秒音声 (RTF: ~2.2) | [Qwen3-TTS ガイド](file:///D:/Work/YuE2/models/qwen3_tts/README.md) |
 
 ---
 
@@ -62,11 +63,17 @@ cloud-genai-studio/
 │   │   ├── generate.py            # MiniMax H3 生成 CLI
 │   │   └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh 等)
 │   │
-│   └── qwen_image_2_1/            # 🎨 Qwen-Image 2.1 (画像生成・2K・バッチ)
-│       ├── README.md              # 3大アプローチ・連続生成ノウハウ・NSFW検証
-│       ├── generate.py            # 単発画像生成 CLI (Approach A/B/C)
-│       ├── batch_generate.py      # 汎用連続バッチ生成 CLI (自動レジューム)
-│       └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh 等)
+│   ├── qwen_image_2_1/            # 🎨 Qwen-Image 2.1 (画像生成・2K・バッチ)
+│   │   ├── README.md              # 3大アプローチ・連続生成ノウハウ・NSFW検証
+│   │   ├── generate.py            # 単発画像生成 CLI (Approach A/B/C)
+│   │   ├── batch_generate.py      # 汎用連続バッチ生成 CLI (自動レジューム)
+│   │   └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh 等)
+│   │
+│   └── qwen3_tts/                 # 🎙️ Qwen3-TTS (多言語・日本語音声合成)
+│       ├── README.md              # 話者特性・末尾途切れ対策（三点リーダー＆パディング）
+│       ├── generate.py            # 日本語音声合成 CLI（自動余韻パディング対応）
+│       ├── benchmark_speakers.py  # 複数話者一括ベンチマークスクリプト
+│       └── gcp/                   # GCP 自動化スクリプト (run_cloud.ps1, setup.sh)
 │
 ├── tools/                         # 【共通制作・ポストプロダクションツール】
 │   ├── upscale.py                 # Real-ESRGAN / FFmpeg による超解像・4K化
